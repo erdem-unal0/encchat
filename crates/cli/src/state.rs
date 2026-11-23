@@ -32,6 +32,13 @@ pub fn resolve_paths(explicit: Option<&Path>, fingerprint: &str) -> Result<(Path
     Ok((base.with_extension("state"), base.with_extension("salt")))
 }
 
+/// How many times an interactive user may retry a passphrase before we give up.
+///
+/// A wrong passphrase used to exit immediately, which is confusing when the
+/// terminal window closes with it. Interactive runs get a few attempts; scripted
+/// runs (`--password-stdin`) get exactly one.
+const MAX_ATTEMPTS: u32 = 3;
+
 /// Open an existing encrypted state file, or create a fresh one.
 ///
 /// Prompts for the passphrase with `rpassword` (or reads it from stdin when
@@ -43,30 +50,69 @@ pub fn load_or_init(
     password_stdin: bool,
 ) -> Result<(ClientCore, store::StoreKey)> {
     if state_path.exists() && salt_path.exists() {
-        let salt_bytes = std::fs::read(salt_path)?;
-        let salt: store::Salt = salt_bytes
-            .as_slice()
-            .try_into()
-            .map_err(|_| anyhow::anyhow!("local salt file is corrupt"))?;
+        open_existing(psk, state_path, salt_path, password_stdin)
+    } else {
+        create_new(psk, state_path, salt_path, password_stdin)
+    }
+}
+
+fn open_existing(
+    psk: &Psk,
+    state_path: &Path,
+    salt_path: &Path,
+    password_stdin: bool,
+) -> Result<(ClientCore, store::StoreKey)> {
+    let salt_bytes = std::fs::read(salt_path)?;
+    let salt: store::Salt = salt_bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("local salt file is corrupt"))?;
+    let blob = std::fs::read(state_path)?;
+    let attempts = if password_stdin { 1 } else { MAX_ATTEMPTS };
+
+    for attempt in 1..=attempts {
         let password = read_password("Passphrase: ", password_stdin)?;
         let key = store::derive_key(&password, &salt)?;
-        let blob = std::fs::read(state_path)?;
-        let state = store::open_state(&key, &blob)
-            .context("could not decrypt local state (wrong passphrase?)")?;
-        Ok((ClientCore::from_state(psk.clone(), state), key))
-    } else {
+        if let Ok(state) = store::open_state(&key, &blob) {
+            return Ok((ClientCore::from_state(psk.clone(), state), key));
+        }
+        if attempt < attempts {
+            eprintln!("Wrong passphrase ({} attempt(s) left).", attempts - attempt);
+        }
+    }
+    bail!("could not decrypt local state (wrong passphrase)")
+}
+
+fn create_new(
+    psk: &Psk,
+    state_path: &Path,
+    salt_path: &Path,
+    password_stdin: bool,
+) -> Result<(ClientCore, store::StoreKey)> {
+    let attempts = if password_stdin { 1 } else { MAX_ATTEMPTS };
+
+    for attempt in 1..=attempts {
         let password = read_password("Choose a passphrase: ", password_stdin)?;
         let confirm = read_password("Confirm passphrase:  ", password_stdin)?;
         if password != confirm {
+            if attempt < attempts {
+                eprintln!(
+                    "Passphrases do not match ({} attempt(s) left).",
+                    attempts - attempt
+                );
+                continue;
+            }
             bail!("passphrases do not match");
         }
+
         let salt = store::new_salt()?;
         let key = store::derive_key(&password, &salt)?;
         std::fs::write(salt_path, salt)?;
         let core = ClientCore::new(psk.clone())?;
         persist(&key, &core, state_path)?;
-        Ok((core, key))
+        return Ok((core, key));
     }
+    bail!("passphrases do not match")
 }
 
 fn read_password(prompt: &str, from_stdin: bool) -> Result<String> {
