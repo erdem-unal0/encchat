@@ -161,3 +161,21 @@ MITM handshake.
 - Audits, fuzzing at scale, and a stable on-disk or on-wire format.
 - Multi-user presence, typing indicators, or delivery receipts beyond what the
   protocol needs.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option. Unless you explicitly state otherwise, any contribution
+intentionally submitted for inclusion in this project, as defined in the Apache
+2.0 license, shall be dual licensed as above, without any additional terms or
+conditions.
+
+> Note: this is a permissive license. Anyone may fork this project, modify the
+> web client, host it, and share nothing back. Given that the server serves the
+> JavaScript, that is a real limitation — see
+> [docs/threat-model.md](docs/threat-model.md). If you later want hosted
+> modifications to remain open, AGPL-3.0 is the license to consider.
