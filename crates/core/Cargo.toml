@@ -1,0 +1,27 @@
+[package]
+name = "encchat-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Cryptography and protocol primitives for encchat. No I/O."
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+getrandom = "0.2"
+zeroize = { version = "1", features = ["derive"] }
+subtle = "2"
+snow = "0.9"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+hmac = "0.12"
+blake2 = "0.10"
+argon2 = "0.5"
+bip39 = "2"
+postcard = { version = "1", features = ["alloc"] }
+
+[dev-dependencies]
+hex = "0.4"

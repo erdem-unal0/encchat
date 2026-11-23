@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <title>encchat</title>
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <h1>encchat</h1>
+          <p class="tagline">End-to-end encrypted 1:1 chat over a blind relay</p>
+        </div>
+        <div class="fingerprint">
+          <span class="fingerprint-label">Room fingerprint</span>
+          <code id="fingerprint">—</code>
+        </div>
+      </header>
+
+      <main>
+        <section class="panel setup" aria-labelledby="setup-heading">
+          <h2 id="setup-heading">Connect</h2>
+
+          <label class="field">
+            <span>Relay URL</span>
+            <input id="serverUrl" type="text" spellcheck="false" value="ws://127.0.0.1:8787" />
+          </label>
+
+          <label class="field">
+            <span>Shared mnemonic (24 words)</span>
+            <textarea
+              id="mnemonic"
+              rows="3"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="abandon ability able about above absent ..."
+            ></textarea>
+          </label>
+
+          <div class="row">
+            <button id="generate" type="button" class="ghost">Generate mnemonic</button>
+          </div>
+
+          <label class="field">
+            <span>Passphrase for local encrypted state (optional)</span>
+            <input
+              id="passphrase"
+              type="password"
+              autocomplete="new-password"
+              placeholder="Used only on this device to encrypt saved sessions"
+            />
+          </label>
+
+          <label class="checkbox">
+            <input id="remember" type="checkbox" />
+            <span>Save encrypted device state on this browser</span>
+          </label>
+
+          <div class="row">
+            <button id="connect" type="button" class="primary">Connect</button>
+            <button id="disconnect" type="button" class="ghost" disabled>Disconnect</button>
+          </div>
+
+          <dl class="stats">
+            <div>
+              <dt>Status</dt>
+              <dd id="status">Idle. Paste your mnemonic and connect.</dd>
+            </div>
+            <div>
+              <dt>Devices in room</dt>
+              <dd id="deviceCount">0</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel chat" aria-labelledby="chat-heading">
+          <h2 id="chat-heading">Conversation</h2>
+          <div id="scrollback" class="scrollback" role="log" aria-live="polite">
+            <p class="empty">No messages yet.</p>
+          </div>
+          <form id="sendForm" class="composer">
+            <input
+              id="message"
+              type="text"
+              autocomplete="off"
+              placeholder="Type a message…"
+              disabled
+            />
+            <button id="send" type="submit" class="primary" disabled>Send</button>
+          </form>
+        </section>
+      </main>
+
+      <footer class="footer">
+        <span
+          >A malicious server could serve modified JavaScript. The WASM bundle is not
+          verified out of band; use the CLI when that matters.</span
+        >
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

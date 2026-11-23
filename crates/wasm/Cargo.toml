@@ -1,0 +1,19 @@
+[package]
+name = "encchat-wasm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "WASM bindings for the encchat web client."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+encchat-core = { workspace = true }
+wasm-bindgen = "0.2"
+getrandom = { version = "0.2", features = ["js"] }
+serde = { workspace = true }
+serde-wasm-bindgen = "0.6"
+serde_bytes = "0.11"
+js-sys = "0.3"

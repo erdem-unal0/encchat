@@ -1,0 +1,21 @@
+[package]
+name = "encchat-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Command-line client for encchat."
+
+[[bin]]
+name = "encchat"
+path = "src/main.rs"
+
+[dependencies]
+encchat-core = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio-tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+rpassword = "7"
+dirs = "5"

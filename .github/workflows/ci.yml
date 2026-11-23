@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    name: rust (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Build and test
+        run: cargo test -p encchat-core -p encchat-cli -p encchat-server
+      - name: Clippy
+        run: cargo clippy -p encchat-core -p encchat-cli -p encchat-server --all-targets
+
+  # The web client is built on Linux so the WASM artifact is reproducible and
+  # independent of the developer's host OS.
+  web:
+    name: web (wasm)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+      - name: Build WASM bindings
+        working-directory: web
+        run: npm run build:wasm
+      - name: Test WASM protocol
+        working-directory: web
+        run: npm run test:wasm
+      - name: Build web app
+        working-directory: web
+        run: npm run build
