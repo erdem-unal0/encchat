@@ -109,8 +109,17 @@ for a passphrase that encrypts its local state:
 cargo run -p encchat-cli -- chat --server ws://127.0.0.1:8787 --mnemonic "<24 words>"
 ```
 
-You should see `secure session with <id>` on both sides, after which anything you
-type is sent to the peer. `/quit` exits.
+This opens an IRC-style full-screen client: a scrollback with timestamps, a
+status bar, and a persistent input line at the bottom. Messages appear as
+`<nick> body` once a peer announces a nickname (set yours with `--nick` or
+`/nick`), and fall back to the peer's short device id otherwise.
+
+Slash commands: `/help`, `/quit`, `/clear`, `/nick <name>`, `/who`, `/status`,
+`/fingerprint`, `/me <action>`. `Up`/`Down` recall input history, `PageUp`/
+`PageDown` scroll, `Tab` completes commands.
+
+Use `--plain` (or run with stdout redirected) for the simple line-based mode,
+which is what the smoke test uses.
 
 Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
 

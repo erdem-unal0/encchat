@@ -77,6 +77,10 @@ pub struct ClientCore {
     pub room: RoomId,
     pub state: LocalState,
     pending: HashMap<DeviceId, XxHandshake>,
+    /// Our advertised nickname, if the user set one.
+    self_nick: Option<String>,
+    /// Nicknames advertised by peers, keyed by device id.
+    peer_nicks: HashMap<DeviceId, String>,
 }
 
 impl ClientCore {
@@ -87,6 +91,8 @@ impl ClientCore {
             room,
             state: LocalState::new()?,
             pending: HashMap::new(),
+            self_nick: None,
+            peer_nicks: HashMap::new(),
         })
     }
 
@@ -97,6 +103,8 @@ impl ClientCore {
             room,
             state,
             pending: HashMap::new(),
+            self_nick: None,
+            peer_nicks: HashMap::new(),
         }
     }
 
@@ -106,6 +114,66 @@ impl ClientCore {
 
     pub fn device_mac(&self) -> Mac {
         self.psk.device_mac(&self.room, &self.state.device_id)
+    }
+
+    /// Set our advertised nickname.
+    ///
+    /// Returns `None` if the name is empty after sanitizing. The name is only a
+    /// label; it is broadcast with [`announce_nick`](Self::announce_nick).
+    pub fn set_nick(&mut self, name: &str) -> Option<()> {
+        self.self_nick = sanitize_nick(name);
+        self.self_nick.as_ref().map(|_| ())
+    }
+
+    pub fn self_nick(&self) -> Option<&str> {
+        self.self_nick.as_deref()
+    }
+
+    /// Encrypt our nickname for one peer.
+    ///
+    /// Returns `None` if we have not set a nickname or have no session with the
+    /// peer yet. The name travels inside the Double Ratchet, so the relay can
+    /// neither read it nor forge one pretending to be this device.
+    pub fn announce_nick(&mut self, peer: DeviceId) -> Option<PeerFrame> {
+        let name = self.self_nick.clone()?;
+        if !self.has_session(peer) {
+            return None;
+        }
+        let mut msg_id = [0u8; 16];
+        getrandom::getrandom(&mut msg_id).ok()?;
+        let payload = ChatPayload {
+            kind: PayloadKind::Nick,
+            msg_id,
+            sent_at: 0,
+            body: name,
+        };
+        let plaintext = encode(&payload).ok()?;
+        let ratchet = self.session_mut(peer)?.ratchet.encrypt(&plaintext).ok()?;
+        Some(PeerFrame::Message { msg_id, ratchet })
+    }
+
+    /// Encrypt our nickname for every peer that already has a session.
+    pub fn announce_nick_to_all(&mut self, peers: &[DeviceId]) -> Vec<(DeviceId, PeerFrame)> {
+        peers
+            .iter()
+            .filter_map(|&peer| self.announce_nick(peer).map(|frame| (peer, frame)))
+            .collect()
+    }
+
+    /// The nickname a peer advertised, if we have received one.
+    pub fn peer_nick(&self, device: DeviceId) -> Option<&str> {
+        self.peer_nicks.get(&device).map(String::as_str)
+    }
+
+    /// Every nickname we know, sorted by device id.
+    pub fn peer_nicks(&self) -> Vec<(DeviceId, String)> {
+        let mut out: Vec<_> = self
+            .peer_nicks
+            .iter()
+            .map(|(id, nick)| (*id, nick.clone()))
+            .collect();
+        out.sort_by_key(|(id, _)| *id);
+        out
     }
 
     pub fn join_frame(&self) -> ClientFrame {
@@ -263,6 +331,12 @@ impl ClientCore {
             PayloadKind::Typing => Ok(vec![Action::Notice(format!(
                 "device {from:02x?} is typing"
             ))]),
+            PayloadKind::Nick => {
+                if let Some(name) = sanitize_nick(&payload.body) {
+                    self.peer_nicks.insert(from, name);
+                }
+                Ok(vec![])
+            }
         }
     }
 
@@ -348,4 +422,22 @@ pub fn encode_state(state: &LocalState) -> Result<Vec<u8>> {
 
 pub fn decode_state(bytes: &[u8]) -> Result<LocalState> {
     decode(bytes)
+}
+
+/// Trim, strip control characters, and cap a nickname at 32 characters.
+///
+/// Returns `None` when nothing usable is left. A nickname is a cosmetic label,
+/// not an identity: two peers may even choose the same one.
+fn sanitize_nick(name: &str) -> Option<String> {
+    let cleaned: String = name
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(32)
+        .collect();
+    let cleaned = cleaned.trim().to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
 }

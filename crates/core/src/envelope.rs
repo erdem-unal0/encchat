@@ -72,6 +72,11 @@ pub enum PeerFrame {
 pub enum PayloadKind {
     Text,
     Typing,
+    /// A nickname announcement. `ChatPayload::body` holds the name.
+    ///
+    /// This travels inside the Double Ratchet like any other payload, so the
+    /// relay cannot read it and cannot forge one on a peer's behalf.
+    Nick,
 }
 
 /// The plaintext inside a [`RatchetMessage`].
