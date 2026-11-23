@@ -3,7 +3,14 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use encchat_core::Psk;
 
+mod app;
 mod chat;
+mod commands;
+mod net;
+mod plain;
+mod state;
+mod tui;
+mod ui;
 
 /// encchat — end-to-end encrypted, self-hosted 1:1 chat.
 #[derive(Debug, Parser)]
@@ -22,7 +29,7 @@ enum Command {
         /// The 24-word mnemonic (quote it).
         mnemonic: String,
     },
-    /// Connect to a relay and exchange messages.
+    /// Connect to a relay and exchange messages in a full-screen UI.
     Chat {
         /// Relay WebSocket URL.
         #[arg(long, default_value = "ws://127.0.0.1:8787")]
@@ -36,6 +43,12 @@ enum Command {
         /// Read the passphrase from stdin instead of prompting (for scripts).
         #[arg(long)]
         password_stdin: bool,
+        /// Nickname to advertise to peers.
+        #[arg(long)]
+        nick: Option<String>,
+        /// Use the simple line-based client instead of the full-screen UI.
+        #[arg(long)]
+        plain: bool,
     },
 }
 
@@ -61,12 +74,16 @@ async fn main() -> anyhow::Result<()> {
             mnemonic,
             state,
             password_stdin,
+            nick,
+            plain,
         } => {
             chat::run(chat::ChatOptions {
                 server,
                 mnemonic,
                 state_path: state,
                 password_stdin,
+                nick,
+                plain,
             })
             .await?;
         }

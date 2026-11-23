@@ -651,19 +651,31 @@ RatchetHeader  = dh(32) || varint(pn) || varint(n)
 
 | Field | Type | Semantics |
 | --- | --- | --- |
-| `kind` | `PayloadKind` | `Text` (0) or `Typing` (1). |
+| `kind` | `PayloadKind` | `Text` (0), `Typing` (1) or `Nick` (2). |
 | `msg_id` | `[u8;16]` | Random per-message ID (CSPRNG), also echoed in `PeerFrame::Message.msg_id`. |
 | `sent_at` | `u64` | Sender wall-clock time, milliseconds since the Unix epoch. Not validated against any clock skew. |
-| `body` | `String` | Message text (UTF-8). |
+| `body` | `String` | Message text (UTF-8); for `Nick`, the nickname. |
 
 ```
 PayloadKind::Text   = 00
 PayloadKind::Typing = 01
+PayloadKind::Nick   = 02
 ChatPayload = kind(u8) || msg_id(16) || varint(sent_at) || str(body)
 ```
 
 `ChatPayload` is encrypted, so all of its fields are authenticated by the
 ratchet. `kind: Typing` currently ignores `body` (and `msg_id`/`sent_at`).
+
+**Nicknames (`kind: Nick`).** A peer advertises a cosmetic nickname by sending a
+normal `PeerFrame::Message` whose decrypted payload has `kind: Nick` and the name
+in `body`. Because it travels inside the ratchet, the relay can neither read the
+name nor forge one claiming to come from another device — an important
+difference from an unencrypted control frame. Receivers trim whitespace, strip
+control characters, and cap the name at 32 characters, then display `<nick>`
+when known and the first eight hex digits of the device id otherwise. A nickname
+is a label, not an identity: it is chosen freely by the sender and may collide.
+Sending one is optional. A `Nick` payload is never added to message history and
+`sent_at` is unused.
 
 ### 6.6 `DeviceEntry`
 
