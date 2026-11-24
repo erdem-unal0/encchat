@@ -36,7 +36,7 @@
 
   /* Derived. The duplicate declaration is the fallback for older browsers. */
   --enc-muted: #93a1b1;
-  --enc-muted: color-mix(in srgb, var(--enc-text) 58%, var(--enc-bg) 42%);
+  --enc-muted: color-mix(in srgb, var(--enc-text) 68%, var(--enc-bg) 32%);
   --enc-border-soft: #2a323c;
   --enc-border-soft: color-mix(in srgb, var(--enc-border) 40%, transparent 60%);
   --enc-input-border: #3a4653;
@@ -93,6 +93,8 @@ html {
 body {
   margin: 0;
   min-height: 100%;
+  height: 100%;
+  overflow: hidden;
   background: var(--enc-bg);
   color: var(--enc-text);
   font-family: var(--enc-font);
@@ -100,6 +102,13 @@ body {
   line-height: var(--enc-line-height);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* The settings route is a normal document, so the page itself scrolls there.
+ * Chat owns the viewport and scrolls only its own scrollback. */
+body[data-view="settings"] {
+  height: auto;
+  overflow-y: auto;
 }
 
 [hidden] {
@@ -263,85 +272,101 @@ input[type="color"]::-webkit-color-swatch {
 #app {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  min-height: 100vh;
-  padding: 20px;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
-.topbar,
-.statusbar,
-.view > main,
-.footer {
-  width: 100%;
-  max-width: var(--enc-max-width);
-  margin-inline: auto;
+body[data-view="settings"] #app {
+  height: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: visible;
 }
 
 #chatView {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
   min-height: 0;
 }
 
 .topbar {
+  flex: 0 0 auto;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px 18px;
   flex-wrap: wrap;
-  padding-bottom: 12px;
+  padding: 10px clamp(12px, 2.2vw, 22px);
   border-bottom: 1px solid var(--enc-border-soft);
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.3rem;
   letter-spacing: 0.03em;
   line-height: 1.1;
 }
 
 .tagline {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--enc-muted);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .topbar-actions {
   display: flex;
-  align-items: flex-end;
-  gap: 16px;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.connect-toggle {
+  padding: 7px 12px;
+  font-size: 0.82rem;
+}
+
+.connect-toggle .conn-dot {
+  width: 7px;
+  height: 7px;
+}
+
+.connect-toggle[aria-expanded="true"] {
+  background: var(--enc-panel-raised);
+  border-color: color-mix(in srgb, var(--enc-accent) 45%, transparent 55%);
 }
 
 .fingerprint {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 3px;
+  min-width: 0;
 }
 
 .fingerprint-label {
   color: var(--enc-muted);
-  font-size: 10px;
+  font-size: 9.5px;
   text-transform: uppercase;
   letter-spacing: 0.09em;
 }
 
 .fingerprint code {
+  max-width: 100%;
   font-family: var(--enc-font-mono);
-  font-size: 0.8rem;
+  font-size: 0.76rem;
   color: var(--enc-status-accent);
   background: var(--enc-panel);
   border: 1px solid var(--enc-border-soft);
   border-radius: 7px;
-  padding: 5px 9px;
+  padding: 4px 8px;
   overflow-wrap: anywhere;
 }
 
 .settings-button {
-  align-self: flex-end;
   padding: 8px 12px;
 }
 
@@ -352,12 +377,14 @@ input[type="color"]::-webkit-color-swatch {
 /* --- Status bar ----------------------------------------------------------- */
 
 .statusbar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  padding: 6px 12px;
-  border-radius: 9px;
+  gap: 4px 14px;
+  margin: 8px clamp(12px, 2.2vw, 22px) 0;
+  padding: 5px 12px;
+  border-radius: 8px;
   background: var(--enc-status-bg);
   color: var(--enc-status-fg);
   font-size: 0.75rem;
@@ -371,10 +398,10 @@ input[type="color"]::-webkit-color-swatch {
 }
 
 .statusbar-label {
-  font-size: 9.5px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  opacity: 0.72;
 }
 
 .statusbar code {
@@ -418,37 +445,19 @@ input[type="color"]::-webkit-color-swatch {
 /* --- Chat layout ---------------------------------------------------------- */
 
 main {
-  display: grid;
-  grid-template-columns: minmax(260px, 344px) minmax(0, 1fr);
-  gap: 16px;
+  display: flex;
   flex: 1;
+  flex-direction: column;
   min-height: 0;
 }
 
-.panel {
-  background: var(--enc-panel);
-  border: 1px solid var(--enc-border-soft);
-  border-radius: var(--enc-radius);
-  padding: 16px;
-  min-width: 0;
-}
-
-.panel h2 {
-  margin: 0 0 12px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--enc-muted);
-  font-weight: 600;
-}
-
-/* --- Setup ---------------------------------------------------------------- */
+/* --- Setup (inside the connect drawer) ------------------------------------ */
 
 .setup {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  align-self: start;
+  min-width: 0;
 }
 
 .field {
@@ -608,27 +617,42 @@ main {
 
 .chat {
   display: flex;
+  flex: 1;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
+  width: 100%;
+  padding: 10px clamp(12px, 2.2vw, 22px) 10px;
+}
+
+/* The conversation fills the viewport; the portable max-width only caps the
+ * reading column, so wide screens do not stretch message lines forever. */
+.scrollback-wrap,
+.command-menu,
+.composer,
+.composer-hint {
+  width: 100%;
+  max-width: var(--enc-max-width);
+  margin-inline: auto;
 }
 
 .scrollback-wrap {
   position: relative;
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
 }
 
 .scrollback {
   flex: 1;
-  min-height: 280px;
-  max-height: 58vh;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--enc-msg-gap);
-  padding: 4px 8px 4px 2px;
+  padding: 4px 8px 8px 2px;
   scrollbar-gutter: stable;
   overscroll-behavior: contain;
 }
@@ -812,6 +836,160 @@ main {
   box-shadow: 0 8px 22px var(--enc-shadow);
 }
 
+/* --- Slash command palette ------------------------------------------------ */
+
+.command-menu {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: min(44vh, 330px);
+  background: var(--enc-panel);
+  border: 1px solid var(--enc-border);
+  border-radius: var(--enc-radius);
+  box-shadow: 0 16px 36px var(--enc-shadow);
+  overflow: hidden;
+}
+
+.command-menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px 5px;
+  border-bottom: 1px solid var(--enc-border-soft);
+  color: var(--enc-muted);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.command-menu-count {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+
+.command-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.command-option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.command-option[aria-selected="true"] {
+  background: color-mix(in srgb, var(--enc-accent) 15%, transparent 85%);
+  border-color: color-mix(in srgb, var(--enc-accent) 38%, transparent 62%);
+}
+
+.command-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.command-name {
+  color: var(--enc-accent);
+  font-family: var(--enc-font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.command-args {
+  color: var(--enc-muted);
+  font-family: var(--enc-font-mono);
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.command-desc {
+  color: var(--enc-muted);
+  font-size: 0.72rem;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.command-option[aria-selected="true"] .command-name,
+.command-option[aria-selected="true"] .command-desc {
+  color: var(--enc-text);
+}
+
+.command-option[aria-selected="true"] .command-desc {
+  opacity: 0.9;
+}
+
+.command-empty {
+  margin: 0;
+  padding: 14px 10px;
+  color: var(--enc-muted);
+  font-size: 0.78rem;
+  font-style: italic;
+  text-align: center;
+}
+
+.command-menu-foot {
+  margin: 0;
+  padding: 6px 12px 7px;
+  border-top: 1px solid var(--enc-border-soft);
+  color: var(--enc-muted);
+  font-size: 0.66rem;
+  text-align: center;
+}
+
+.composer-command {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--enc-input-prompt) 32%, transparent 68%);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--enc-input-prompt) 12%, transparent 88%);
+  color: var(--enc-input-prompt);
+  font-family: var(--enc-font-mono);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.composer-command:hover,
+.composer-command:focus-visible {
+  background: color-mix(in srgb, var(--enc-input-prompt) 22%, transparent 78%);
+}
+
+.composer-command:focus-visible {
+  outline: 2px solid var(--enc-accent);
+  outline-offset: 1px;
+}
+
+@media (max-width: 640px) {
+  .command-menu {
+    max-height: 42vh;
+  }
+
+  .command-menu-foot {
+    font-size: 0.62rem;
+  }
+}
+
 /* --- Composer ------------------------------------------------------------- */
 
 .composer {
@@ -847,11 +1025,6 @@ main {
   outline: none;
 }
 
-.composer-prompt {
-  color: var(--enc-input-prompt);
-  font-weight: 700;
-}
-
 [data-input-border="off"] .composer,
 [data-input-border="off"] .preview-composer {
   border-color: transparent;
@@ -859,7 +1032,7 @@ main {
 }
 
 .composer-hint {
-  margin: 0;
+  margin: 0 auto;
   color: var(--enc-muted);
   font-size: 0.72rem;
   text-align: center;
@@ -868,12 +1041,98 @@ main {
 /* --- Footer --------------------------------------------------------------- */
 
 .footer {
-  color: var(--enc-muted);
-  font-size: 0.72rem;
-  text-align: center;
-  padding-top: 10px;
+  flex: 0 0 auto;
+  padding: 6px clamp(12px, 2.2vw, 22px) 8px;
   border-top: 1px solid var(--enc-border-soft);
-  line-height: 1.5;
+  color: var(--enc-muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+/* --- Connect drawer ------------------------------------------------------- */
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.22s ease, visibility 0s linear 0.22s;
+}
+
+.drawer-scrim[data-open="true"] {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s ease, visibility 0s;
+}
+
+.connect-drawer {
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, 92vw);
+  background: var(--enc-panel);
+  border-right: 1px solid var(--enc-border);
+  box-shadow: 18px 0 48px var(--enc-shadow);
+  transform: translateX(-104%);
+  visibility: hidden;
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s linear 0.24s;
+  will-change: transform;
+}
+
+.connect-drawer[data-open="true"] {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), visibility 0s;
+}
+
+.drawer-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--enc-border-soft);
+}
+
+.drawer-head-copy {
+  min-width: 0;
+}
+
+.drawer-eyebrow {
+  display: block;
+  color: var(--enc-muted);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.drawer-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.drawer-close {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  overscroll-behavior: contain;
 }
 
 /* --- Settings page -------------------------------------------------------- */
@@ -883,6 +1142,7 @@ main {
   width: 100%;
   max-width: 1460px;
   margin-inline: auto;
+  padding: 20px clamp(12px, 2.4vw, 24px) 0;
 }
 
 .settings-shell {
@@ -1821,51 +2081,63 @@ main {
 }
 
 @media (max-width: 800px) {
-  main {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "setup"
-      "chat";
-  }
-
-  .setup {
-    grid-area: setup;
-  }
-
   .chat {
-    grid-area: chat;
-  }
-
-  /* Once connected, the conversation comes first on phones; the setup panel
-   * stays below and is still reachable by scrolling (Disconnect included). */
-  body[data-connected="true"] main {
-    grid-template-areas:
-      "chat"
-      "setup";
-  }
-
-  .scrollback {
-    max-height: 52vh;
+    padding: 8px 12px;
   }
 }
 
 @media (max-width: 640px) {
-  #app {
-    gap: 12px;
-    padding: 12px;
-  }
-
   .topbar {
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px 8px;
+    padding: 8px 12px;
   }
 
+  .brand {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .brand h1 {
+    font-size: 1.12rem;
+  }
+
+  .tagline {
+    display: none;
+  }
+
+  /* Flatten the actions so the buttons and fingerprint can occupy grid cells:
+   * brand + controls on the first row, the full fingerprint on its own row. */
   .topbar-actions {
-    align-items: center;
-    gap: 10px;
+    display: contents;
+  }
+
+  .connect-toggle {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .settings-button {
+    grid-column: 3;
+    grid-row: 1;
   }
 
   .fingerprint {
+    grid-column: 1 / -1;
+    grid-row: 2;
     align-items: flex-start;
+  }
+
+  .fingerprint-label {
+    display: none;
+  }
+
+  .fingerprint code {
+    font-size: 0.68rem;
+    padding: 3px 6px;
   }
 
   .settings-button-label {
@@ -1874,6 +2146,15 @@ main {
 
   .settings-button {
     padding: 8px;
+  }
+
+  .statusbar {
+    margin: 6px 12px 0;
+    gap: 3px 10px;
+  }
+
+  .chat {
+    padding: 8px 12px;
   }
 
   .settings-shell {
@@ -1916,6 +2197,10 @@ main {
   .statusbar-clock {
     margin-left: 0;
   }
+
+  .footer {
+    padding: 5px 12px 6px;
+  }
 }
 
 @media (max-width: 400px) {
@@ -1935,6 +2220,13 @@ main {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .connect-drawer,
+  .connect-drawer[data-open="true"],
+  .drawer-scrim,
+  .drawer-scrim[data-open="true"] {
+    transition: none;
+  }
+
   *,
   *::before,
   *::after {

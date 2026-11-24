@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="data:," />
     <meta
       name="description"
       content="Self-hosted, end-to-end encrypted 1:1 chat over a blind relay."
     />
     <title>encchat</title>
   </head>
-  <body>
+  <body data-view="chat">
     <div id="app">
       <header class="topbar">
         <div class="brand">
@@ -18,6 +19,18 @@
           <p class="tagline">End-to-end encrypted 1:1 chat over a blind relay</p>
         </div>
         <div class="topbar-actions">
+          <button
+            id="connectToggle"
+            class="btn ghost connect-toggle"
+            type="button"
+            aria-expanded="false"
+            aria-controls="connectDrawer"
+            aria-label="Open connection panel"
+            title="Connection"
+          >
+            <span id="connectDot" class="conn-dot" data-state="idle" aria-hidden="true"></span>
+            <span id="connectToggleLabel" class="connect-toggle-label">Connect</span>
+          </button>
           <div class="fingerprint">
             <span class="fingerprint-label">Room fingerprint</span>
             <code id="fingerprint">—</code>
@@ -74,70 +87,7 @@
         </div>
 
         <main>
-          <section class="panel setup" aria-labelledby="setup-heading">
-            <h2 id="setup-heading">Connect</h2>
-
-            <label class="field">
-              <span>Relay URL</span>
-              <input id="serverUrl" type="text" spellcheck="false" value="ws://127.0.0.1:8787" />
-            </label>
-
-            <label class="field">
-              <span>Shared mnemonic (24 words)</span>
-              <textarea
-                id="mnemonic"
-                rows="3"
-                spellcheck="false"
-                autocomplete="off"
-                placeholder="abandon ability able about above absent ..."
-              ></textarea>
-            </label>
-
-            <div class="row">
-              <button id="generate" type="button" class="btn ghost">Generate mnemonic</button>
-            </div>
-
-            <label class="field">
-              <span>Passphrase for local encrypted state (optional)</span>
-              <input
-                id="passphrase"
-                type="password"
-                autocomplete="new-password"
-                placeholder="Used only on this device to encrypt saved sessions"
-              />
-            </label>
-
-            <label class="checkbox">
-              <input id="remember" type="checkbox" />
-              <span>Save encrypted device state on this browser</span>
-            </label>
-
-            <div class="row">
-              <button id="connect" type="button" class="btn primary">Connect</button>
-              <button id="disconnect" type="button" class="btn ghost" disabled>Disconnect</button>
-            </div>
-
-            <dl class="stats">
-              <div>
-                <dt>Status</dt>
-                <dd id="status">Idle. Paste your mnemonic and connect.</dd>
-              </div>
-              <div>
-                <dt>Devices in room</dt>
-                <dd id="deviceCount">0</dd>
-              </div>
-            </dl>
-
-            <div class="people">
-              <h3 class="people-heading">People</h3>
-              <ul id="peopleList" class="people-list">
-                <li class="people-empty">Connect to see peers.</li>
-              </ul>
-            </div>
-          </section>
-
-          <section class="panel chat" aria-labelledby="chat-heading">
-            <h2 id="chat-heading">Conversation</h2>
+          <section class="chat" aria-label="Conversation">
             <div class="scrollback-wrap">
               <div id="scrollback" class="scrollback" role="log" aria-live="polite">
                 <p class="empty">No messages yet.</p>
@@ -146,19 +96,50 @@
                 New messages
               </button>
             </div>
+            <div id="commandMenu" class="command-menu" hidden>
+              <div class="command-menu-head" aria-hidden="true">
+                <span class="command-menu-title">Commands</span>
+                <span id="commandCount" class="command-menu-count"></span>
+              </div>
+              <ul
+                id="commandList"
+                class="command-list"
+                role="listbox"
+                aria-label="Slash commands"
+              ></ul>
+              <p class="command-menu-foot" aria-hidden="true">
+                ↑↓ navigate · Tab complete · Enter run · Esc close
+              </p>
+            </div>
             <form id="sendForm" class="composer">
-              <span class="composer-prompt" aria-hidden="true">›</span>
+              <button
+                id="commandToggle"
+                class="composer-command"
+                type="button"
+                aria-label="Show commands"
+                aria-haspopup="listbox"
+                aria-controls="commandList"
+                aria-expanded="false"
+                title="Commands (type /)"
+              >
+                /
+              </button>
               <input
                 id="message"
                 type="text"
                 autocomplete="off"
-                placeholder="Type a message…"
+                placeholder="Type a message or / for commands…"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="commandList"
                 disabled
               />
               <button id="send" type="submit" class="btn primary" disabled>Send</button>
             </form>
             <p id="composerHint" class="composer-hint">
-              Enter sends · messages stay end-to-end encrypted
+              Enter sends · type / for commands · messages stay end-to-end encrypted
             </p>
           </section>
         </main>
@@ -179,6 +160,91 @@
         >
       </footer>
     </div>
+
+    <div id="connectScrim" class="drawer-scrim" hidden></div>
+    <aside
+      id="connectDrawer"
+      class="connect-drawer"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="connect-heading"
+      hidden
+    >
+      <header class="drawer-head">
+        <div class="drawer-head-copy">
+          <span class="drawer-eyebrow">encchat</span>
+          <h2 id="connect-heading">Connect</h2>
+        </div>
+        <button
+          id="connectClose"
+          class="icon-button drawer-close"
+          type="button"
+          aria-label="Close connection panel"
+        >
+          ×
+        </button>
+      </header>
+
+      <section class="setup drawer-body">
+        <label class="field">
+          <span>Relay URL</span>
+          <input id="serverUrl" type="text" spellcheck="false" value="ws://127.0.0.1:8787" />
+        </label>
+
+        <label class="field">
+          <span>Shared mnemonic (24 words)</span>
+          <textarea
+            id="mnemonic"
+            rows="3"
+            spellcheck="false"
+            autocomplete="off"
+            placeholder="abandon ability able about above absent ..."
+          ></textarea>
+        </label>
+
+        <div class="row">
+          <button id="generate" type="button" class="btn ghost">Generate mnemonic</button>
+        </div>
+
+        <label class="field">
+          <span>Passphrase for local encrypted state (optional)</span>
+          <input
+            id="passphrase"
+            type="password"
+            autocomplete="new-password"
+            placeholder="Used only on this device to encrypt saved sessions"
+          />
+        </label>
+
+        <label class="checkbox">
+          <input id="remember" type="checkbox" />
+          <span>Save encrypted device state on this browser</span>
+        </label>
+
+        <div class="row">
+          <button id="connect" type="button" class="btn primary">Connect</button>
+          <button id="disconnect" type="button" class="btn ghost" disabled>Disconnect</button>
+        </div>
+
+        <dl class="stats">
+          <div>
+            <dt>Status</dt>
+            <dd id="status">Idle. Paste your mnemonic and connect.</dd>
+          </div>
+          <div>
+            <dt>Devices in room</dt>
+            <dd id="deviceCount">0</dd>
+          </div>
+        </dl>
+
+        <div class="people">
+          <h3 class="people-heading">People</h3>
+          <ul id="peopleList" class="people-list">
+            <li class="people-empty">Connect to see peers.</li>
+          </ul>
+        </div>
+      </section>
+    </aside>
 
     <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 

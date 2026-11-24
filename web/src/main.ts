@@ -18,6 +18,7 @@ import {
   DEFAULT_APPEARANCE,
   DEFAULT_COLOR_FALLBACKS,
   applyAppearance,
+  appearancePresets,
   colorToCss,
   formatTimestamp,
   loadAliases,
@@ -26,9 +27,18 @@ import {
   peerColor,
   sanitizeLabel,
   saveAliases,
+  saveAppearance,
   saveOwnNick,
   type Appearance,
 } from "./appearance.js";
+import {
+  COMMANDS,
+  completeCommand,
+  filterCommands,
+  findCommand,
+  parseCommand,
+  type CommandSpec,
+} from "./commands.js";
 import { SettingsPage, type SettingsContext } from "./settings-page.js";
 import "./style.css";
 
@@ -106,6 +116,17 @@ const statusRoom = el<HTMLElement>("statusRoom");
 const statusPeers = el<HTMLElement>("statusPeers");
 const statusSessions = el<HTMLElement>("statusSessions");
 const statusClock = el<HTMLElement>("statusClock");
+const connectToggle = el<HTMLButtonElement>("connectToggle");
+const connectToggleLabel = el<HTMLElement>("connectToggleLabel");
+const connectDot = el<HTMLElement>("connectDot");
+const connectHeading = el<HTMLElement>("connect-heading");
+const connectDrawer = el<HTMLElement>("connectDrawer");
+const connectClose = el<HTMLButtonElement>("connectClose");
+const connectScrim = el<HTMLElement>("connectScrim");
+const commandMenu = el<HTMLElement>("commandMenu");
+const commandList = el<HTMLUListElement>("commandList");
+const commandCount = el<HTMLElement>("commandCount");
+const commandToggle = el<HTMLButtonElement>("commandToggle");
 
 // --- Client state -----------------------------------------------------------
 
@@ -124,6 +145,12 @@ let appearance: Appearance = DEFAULT_APPEARANCE;
 let settingsPage: SettingsPage | null = null;
 let unread = 0;
 let clockTimer: number | null = null;
+let drawerOpen = false;
+let drawerReturnFocus: HTMLElement | null = null;
+let connectionState: ConnectionState = "idle";
+let commandMenuOpen = false;
+let commandMatches: CommandSpec[] = [];
+let commandIndex = 0;
 
 // Paint the fallback look immediately; the saved appearance is applied after
 // the WASM module initializes (it needs `appearance_defaults`).
@@ -166,15 +193,18 @@ function setDeviceCount(count: number): void {
   deviceCountEl.textContent = String(count);
 }
 
+const CONNECTION_LABELS: Record<ConnectionState, string> = {
+  idle: "Idle",
+  connecting: "Connecting…",
+  online: "Online",
+  offline: "Offline",
+};
+
 function setConnection(state: ConnectionState): void {
-  const labels: Record<ConnectionState, string> = {
-    idle: "Idle",
-    connecting: "Connecting…",
-    online: "Online",
-    offline: "Offline",
-  };
+  connectionState = state;
   connDot.dataset.state = state;
-  statusText.textContent = labels[state];
+  connectDot.dataset.state = state;
+  statusText.textContent = CONNECTION_LABELS[state];
   updateStatusBar();
 }
 
@@ -356,7 +386,9 @@ function renderPeople(): void {
   if (!client || peers.size === 0) {
     const empty = document.createElement("li");
     empty.className = "people-empty";
-    empty.textContent = "Connect to see peers.";
+    empty.textContent = connectionIsOpen()
+      ? "No peers in the room yet."
+      : "Connect to see peers.";
     peopleList.append(empty);
     return;
   }
@@ -417,6 +449,329 @@ jumpLatest.addEventListener("click", () => {
   jumpLatest.hidden = true;
   scrollToBottom();
 });
+
+// --- Slash commands ---------------------------------------------------------
+
+function commandOptionId(index: number): string {
+  return `command-option-${index}`;
+}
+
+/** Text after the leading slash; used as the palette filter. */
+function commandQuery(value: string): string {
+  return value.slice(1);
+}
+
+/** `/name` (or `/`) with no whitespace yet is palette territory. */
+function isCommandFilter(value: string): boolean {
+  return value.startsWith("/") && !/\s/.test(value.slice(1));
+}
+
+function updateActiveDescendant(): void {
+  const selected = commandMenuOpen ? commandMatches[commandIndex] : undefined;
+  if (selected) {
+    messageInput.setAttribute("aria-activedescendant", commandOptionId(commandIndex));
+  } else {
+    messageInput.removeAttribute("aria-activedescendant");
+  }
+}
+
+function buildCommandRow(command: CommandSpec, index: number): HTMLLIElement {
+  const row = document.createElement("li");
+  row.id = commandOptionId(index);
+  row.className = "command-option";
+  row.setAttribute("role", "option");
+  row.setAttribute("aria-selected", String(index === commandIndex));
+
+  const line = document.createElement("span");
+  line.className = "command-line";
+  const name = document.createElement("span");
+  name.className = "command-name";
+  name.textContent = `/${command.name}`;
+  line.append(name);
+  if (command.args) {
+    const args = document.createElement("span");
+    args.className = "command-args";
+    args.textContent = command.args;
+    line.append(args);
+  }
+
+  const description = document.createElement("span");
+  description.className = "command-desc";
+  description.textContent = command.description;
+
+  row.append(line, description);
+
+  // Keep focus in the composer while the pointer is over the palette.
+  row.addEventListener("pointerdown", (event) => event.preventDefault());
+  row.addEventListener("mousedown", (event) => event.preventDefault());
+  row.addEventListener("pointerenter", () => selectCommand(index));
+  row.addEventListener("click", () => activateCommand(index));
+  return row;
+}
+
+function renderCommandMenu(): void {
+  commandMatches = filterCommands(commandQuery(messageInput.value));
+  if (commandIndex >= commandMatches.length) commandIndex = 0;
+
+  const fragment = document.createDocumentFragment();
+  commandMatches.forEach((command, index) => {
+    fragment.append(buildCommandRow(command, index));
+  });
+  if (commandMatches.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "command-empty";
+    empty.setAttribute("role", "presentation");
+    empty.textContent = "No matching commands";
+    fragment.append(empty);
+  }
+
+  commandList.replaceChildren(fragment);
+  commandCount.textContent = commandMatches.length === 0 ? "" : String(commandMatches.length);
+  commandMenu.hidden = false;
+  commandMenuOpen = true;
+  messageInput.setAttribute("aria-expanded", "true");
+  commandToggle.setAttribute("aria-expanded", "true");
+  updateActiveDescendant();
+}
+
+function closeCommandMenu(): void {
+  commandMenuOpen = false;
+  commandMatches = [];
+  commandIndex = 0;
+  commandMenu.hidden = true;
+  messageInput.setAttribute("aria-expanded", "false");
+  commandToggle.setAttribute("aria-expanded", "false");
+  messageInput.removeAttribute("aria-activedescendant");
+}
+
+function selectCommand(index: number, scroll = false): void {
+  if (commandMatches.length === 0) return;
+  commandIndex =
+    ((index % commandMatches.length) + commandMatches.length) % commandMatches.length;
+  commandList.querySelectorAll<HTMLElement>(".command-option").forEach((row, rowIndex) => {
+    row.setAttribute("aria-selected", String(rowIndex === commandIndex));
+  });
+  updateActiveDescendant();
+  if (scroll) {
+    commandList
+      .querySelector<HTMLElement>(`#${commandOptionId(commandIndex)}`)
+      ?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+/** Tab / click completion: `/nick ` for argument-taking commands. */
+function completeSelectedCommand(command: CommandSpec): void {
+  messageInput.value = completeCommand(command.name, command.takesArgs);
+  const end = messageInput.value.length;
+  messageInput.setSelectionRange(end, end);
+  messageInput.focus({ preventScroll: true });
+  if (command.takesArgs) {
+    closeCommandMenu();
+  } else {
+    commandIndex = 0;
+    renderCommandMenu();
+  }
+}
+
+/** Enter / click activation: run argument-free commands, complete the rest. */
+function activateCommand(index: number): void {
+  const command = commandMatches[index];
+  if (!command) return;
+  if (command.takesArgs) {
+    completeSelectedCommand(command);
+    return;
+  }
+  executeCommandText(`/${command.name}`);
+}
+
+function clearScrollback(): void {
+  scrollbackEl.replaceChildren();
+  const empty = document.createElement("p");
+  empty.className = "empty";
+  empty.textContent = "No messages yet.";
+  scrollbackEl.append(empty);
+  unread = 0;
+  jumpLatest.hidden = true;
+}
+
+function commandUsage(command: CommandSpec): string {
+  return `/${command.name}${command.args ? ` ${command.args}` : ""}`;
+}
+
+function helpText(): string {
+  const width = Math.max(...COMMANDS.map((command) => commandUsage(command).length));
+  const lines = COMMANDS.map(
+    (command) => `  ${commandUsage(command).padEnd(width)}  ${command.description}`,
+  );
+  return [
+    "Commands — type / to open the menu, then ↑↓ and Enter.",
+    ...lines,
+    "Arguments go after a space, e.g. /nick alice.",
+  ].join("\n");
+}
+
+function shortcutText(): string {
+  return [
+    "Keyboard shortcuts",
+    "  Enter          Send a message, or run the selected command",
+    "  /              Open the command menu",
+    "  ↑ / ↓          Move through the command menu",
+    "  Tab            Complete the selected command",
+    "  Esc            Close the command menu",
+    "  Esc / backdrop Close the connection drawer",
+    "  Ctrl/Cmd + S   Save changes on the settings page",
+  ].join("\n");
+}
+
+function runCommand(name: string, args: string): void {
+  switch (name) {
+    case "help":
+      appendSystem(helpText());
+      break;
+    case "clear":
+      clearScrollback();
+      toast("Conversation cleared.");
+      break;
+    case "nick": {
+      const requested = sanitizeLabel(args);
+      if (!requested) {
+        const current = ownNick ? `Current display name: ${ownNick}` : "No display name set.";
+        appendSystem(
+          `Usage: /nick <name>\n${current}\nSet a lasting label in Settings → Labels.`,
+        );
+        break;
+      }
+      applySavedNick(requested);
+      appendSystem(`Display name set to ${requested}.`);
+      break;
+    }
+    case "who": {
+      if (!client) {
+        appendSystem("Not connected. Use /connect to join a room.");
+        break;
+      }
+      const lines = [
+        `Verified peers: ${peers.size}`,
+        `You: ${ownLabel()} · ${shortId(client.device_id_hex())}`,
+      ];
+      if (peers.size === 0) {
+        lines.push("  No peers in the room yet.");
+      } else {
+        for (const id of [...peers.keys()].sort()) {
+          const session = client.has_session(id) ? "session" : "awaiting session";
+          lines.push(`  ${shortId(id)} · ${peopleLabel(id)} · ${session}`);
+        }
+      }
+      appendSystem(lines.join("\n"));
+      break;
+    }
+    case "status": {
+      const room = fingerprintEl.textContent?.trim() ?? "";
+      appendSystem(
+        [
+          `Connection: ${CONNECTION_LABELS[connectionState]}`,
+          `Relay: ${serverUrlInput.value.trim() || "—"}`,
+          `Room fingerprint: ${room && room !== "—" ? room : "—"}`,
+          `This device: ${client ? client.device_id_hex() : "— (not connected)"}`,
+          `Peers: ${peers.size} · Sessions: ${client ? client.session_count() : 0}`,
+        ].join("\n"),
+      );
+      break;
+    }
+    case "fingerprint": {
+      const room = fingerprintEl.textContent?.trim() ?? "";
+      appendSystem(
+        room && room !== "—"
+          ? `Room fingerprint: ${room}`
+          : "No room fingerprint yet — enter the shared mnemonic in the connection panel.",
+      );
+      break;
+    }
+    case "settings":
+      window.location.hash = "#/settings";
+      break;
+    case "theme": {
+      const presets = appearancePresets();
+      const names = presets.map((preset) => preset.name);
+      const requested = args.trim();
+      if (!requested) {
+        const list = presets
+          .map((preset) => `${preset.name}${preset.name === appearance.theme.name ? " (current)" : ""}`)
+          .join(", ");
+        appendSystem(`Themes: ${list}\nUsage: /theme <name>`);
+        break;
+      }
+      const preset = presets.find(
+        (candidate) => candidate.name.toLowerCase() === requested.toLowerCase(),
+      );
+      if (!preset) {
+        appendSystem(`Unknown theme: ${requested}\nValid themes: ${names.join(", ")}`);
+        break;
+      }
+      setAppearance({ ...appearance, theme: preset });
+      saveAppearance(appearance);
+      appendSystem(`Theme set to ${preset.name}.`);
+      break;
+    }
+    case "timestamps": {
+      const next: Appearance = {
+        ...appearance,
+        timestamps: { ...appearance.timestamps, enabled: !appearance.timestamps.enabled },
+      };
+      setAppearance(next);
+      saveAppearance(next);
+      appendSystem(`Timestamps ${next.timestamps.enabled ? "on" : "off"}.`);
+      break;
+    }
+    case "keys":
+      appendSystem(shortcutText());
+      break;
+    case "connect":
+      openDrawer();
+      break;
+    case "disconnect":
+      if (!socket && !client) {
+        appendSystem("Not connected.");
+        break;
+      }
+      disconnect();
+      appendSystem("Disconnected from the relay.");
+      break;
+  }
+}
+
+function executeCommandText(raw: string): void {
+  const parsed = parseCommand(raw);
+  closeCommandMenu();
+  messageInput.value = "";
+  if (!messageInput.disabled) messageInput.focus({ preventScroll: true });
+  if (!parsed) {
+    appendSystem("Type a command after / (for example /help).");
+    return;
+  }
+  if (!findCommand(parsed.name)) {
+    appendSystem(`Unknown command: /${parsed.name} — type / for the list.`);
+    return;
+  }
+  runCommand(parsed.name, parsed.args);
+}
+
+/** Enter: run the selected command, complete it, or send normal text. */
+function submitComposer(): void {
+  const selected = commandMenuOpen ? commandMatches[commandIndex] : undefined;
+  if (selected) {
+    if (selected.takesArgs) {
+      completeSelectedCommand(selected);
+      return;
+    }
+    executeCommandText(`/${selected.name}`);
+    return;
+  }
+  const body = messageInput.value.trim();
+  if (!body) return;
+  if (body.startsWith("/")) executeCommandText(body);
+  else sendMessage();
+}
 
 // --- Encrypted local state --------------------------------------------------
 
@@ -609,6 +964,11 @@ function onServerFrame(frame: ServerFrame): void {
       setStatus(`Joined room ${shortId(frame.room)}…`, "ok");
       onJoined(frame.devices);
       setConnection("online");
+      // Joining is the point where the conversation becomes the whole surface.
+      if (drawerOpen) {
+        closeDrawer({ restoreFocus: false });
+        if (!messageInput.disabled) messageInput.focus({ preventScroll: true });
+      }
       break;
     case "devices":
       syncDevices(frame.devices);
@@ -624,10 +984,109 @@ function onServerFrame(frame: ServerFrame): void {
   }
 }
 
+// --- Connect drawer ---------------------------------------------------------
+
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "textarea:not([disabled])",
+  "select:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function connectionIsOpen(): boolean {
+  return socket !== null && socket.readyState === WebSocket.OPEN;
+}
+
+function drawerFocusables(): HTMLElement[] {
+  return Array.from(connectDrawer.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
+}
+
+/** The mnemonic is the step that actually unblocks onboarding. */
+function focusDrawerStart(): void {
+  const target: HTMLElement = connectionIsOpen() ? connectClose : mnemonicInput;
+  target.focus({ preventScroll: true });
+}
+
+function openDrawer(options: { focus?: boolean } = {}): void {
+  if (drawerOpen) {
+    if (options.focus !== false) focusDrawerStart();
+    return;
+  }
+  drawerOpen = true;
+  const active = document.activeElement;
+  drawerReturnFocus =
+    active instanceof HTMLElement && active !== document.body ? active : connectToggle;
+  connectDrawer.hidden = false;
+  connectScrim.hidden = false;
+  connectToggle.setAttribute("aria-expanded", "true");
+  window.requestAnimationFrame(() => {
+    if (!drawerOpen) return;
+    connectDrawer.dataset.open = "true";
+    connectScrim.dataset.open = "true";
+    // Resolve the visible style before moving focus into the panel.
+    void connectDrawer.offsetWidth;
+    if (options.focus !== false) focusDrawerStart();
+  });
+}
+
+function closeDrawer(options: { restoreFocus?: boolean } = {}): void {
+  if (!drawerOpen) return;
+  drawerOpen = false;
+  connectDrawer.dataset.open = "false";
+  connectScrim.dataset.open = "false";
+  connectToggle.setAttribute("aria-expanded", "false");
+  const target = drawerReturnFocus;
+  drawerReturnFocus = null;
+  if (options.restoreFocus === false) return;
+  const fallback = target && target.isConnected ? target : connectToggle;
+  fallback.focus({ preventScroll: true });
+}
+
+function toggleDrawer(): void {
+  if (drawerOpen) closeDrawer();
+  else openDrawer();
+}
+
+function handleDrawerKeydown(event: KeyboardEvent): void {
+  if (!drawerOpen) return;
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeDrawer();
+    return;
+  }
+  if (event.key !== "Tab") return;
+  const focusable = drawerFocusables();
+  if (focusable.length === 0) {
+    event.preventDefault();
+    return;
+  }
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  const active = document.activeElement;
+  const inside = active instanceof Node && connectDrawer.contains(active);
+  if (event.shiftKey) {
+    if (!inside || active === first) {
+      event.preventDefault();
+      last.focus();
+    }
+  } else if (!inside || active === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
 // --- Connect / disconnect ---------------------------------------------------
 
 function setConnected(connected: boolean): void {
   document.body.dataset.connected = connected ? "true" : "false";
+  connectToggleLabel.textContent = connected ? "Connection" : "Connect";
+  connectToggle.setAttribute(
+    "aria-label",
+    connected ? "Open connection details" : "Open connection setup",
+  );
+  connectHeading.textContent = connected ? "Connection" : "Connect";
   connectButton.disabled = connected;
   disconnectButton.disabled = !connected;
   messageInput.disabled = !connected;
@@ -650,6 +1109,7 @@ function disconnect(reason = "Disconnected."): void {
   peerNicks = new Map();
   handshaking = new Set();
   unread = 0;
+  closeCommandMenu();
   jumpLatest.hidden = true;
   setDeviceCount(0);
   setConnected(false);
@@ -802,8 +1262,11 @@ function sendMessage(): void {
 
 function updateRoute(): void {
   const showSettings = window.location.hash === "#/settings";
+  document.body.dataset.view = showSettings ? "settings" : "chat";
   chatView.hidden = showSettings;
   settingsView.hidden = !showSettings;
+  if (showSettings) closeCommandMenu();
+  if (showSettings && drawerOpen) closeDrawer({ restoreFocus: false });
   settingsButton.setAttribute("aria-pressed", String(showSettings));
   settingsButton.setAttribute(
     "aria-label",
@@ -889,9 +1352,66 @@ async function bootstrap(): Promise<void> {
   connectButton.addEventListener("click", connect);
   disconnectButton.addEventListener("click", () => disconnect());
 
+  connectToggle.addEventListener("click", toggleDrawer);
+  connectClose.addEventListener("click", () => closeDrawer());
+  connectScrim.addEventListener("click", () => closeDrawer());
+  connectDrawer.addEventListener("keydown", handleDrawerKeydown);
+  document.addEventListener("keydown", (event) => {
+    if (!drawerOpen || event.key !== "Escape") return;
+    event.preventDefault();
+    closeDrawer();
+  });
+
   sendForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    sendMessage();
+    submitComposer();
+  });
+
+  messageInput.addEventListener("input", () => {
+    if (isCommandFilter(messageInput.value)) {
+      commandIndex = 0;
+      renderCommandMenu();
+    } else {
+      closeCommandMenu();
+    }
+  });
+
+  messageInput.addEventListener("keydown", (event) => {
+    if (!commandMenuOpen) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      selectCommand(commandIndex + (event.key === "ArrowDown" ? 1 : -1), true);
+      return;
+    }
+    if (event.key === "Tab") {
+      if (commandMatches.length > 0) {
+        event.preventDefault();
+        completeSelectedCommand(commandMatches[commandIndex]);
+      }
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      closeCommandMenu();
+    }
+  });
+
+  commandToggle.addEventListener("click", () => {
+    if (messageInput.disabled) {
+      openDrawer();
+      return;
+    }
+    messageInput.focus({ preventScroll: true });
+    if (!messageInput.value.trim()) messageInput.value = "/";
+    if (isCommandFilter(messageInput.value)) {
+      const end = messageInput.value.length;
+      messageInput.setSelectionRange(end, end);
+      commandIndex = 0;
+      renderCommandMenu();
+    } else {
+      messageInput.select();
+    }
   });
 
   settingsButton.addEventListener("click", () => {
@@ -901,6 +1421,10 @@ async function bootstrap(): Promise<void> {
   createSettingsPage();
   window.addEventListener("hashchange", updateRoute);
   updateRoute();
+
+  // Onboarding: show the connection panel on first load unless the user
+  // landed directly on the settings route.
+  if (window.location.hash !== "#/settings") openDrawer();
 
   clockTimer = window.setInterval(() => {
     if (!statusBar.hidden) updateClock();

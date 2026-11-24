@@ -43,6 +43,10 @@ If PowerShell blocks the `npm.ps1` shim with an execution-policy error, call
 
 ## Using the app
 
+The conversation fills the window. The connection panel slides out from the
+header **Connect** button (it opens automatically on first load and closes once
+the room is joined).
+
 1. **Relay URL** — the WebSocket endpoint of `encchat-server`
    (default `ws://127.0.0.1:8787`).
 2. **Shared mnemonic** — the 24-word phrase both people agreed on out of band.
@@ -63,12 +67,40 @@ The raw mnemonic is **never** written to `localStorage`. If you enable saved
 state, only the passphrase-encrypted blob and its salt are stored, and you must
 re-enter the mnemonic and passphrase to restore the device.
 
+## Slash commands
+
+Type `/` in the composer (or click the `/` button at its left) to open the
+command palette above the input. It filters by command name as you type, hides
+once you add an argument, and commands are never sent as chat messages.
+
+| Command | What it does |
+| --- | --- |
+| `/help` | Show the command list |
+| `/clear` | Clear the scrollback back to the empty state |
+| `/nick [name]` | Set or show your display name (`Settings → Labels` for a lasting one) |
+| `/who` | List verified peers, labels and session state |
+| `/status` | Connection, relay, room fingerprint, device, peer/session counts |
+| `/fingerprint` | Print the room fingerprint |
+| `/settings` | Open appearance settings |
+| `/theme [name]` | List presets (current marked) or apply one |
+| `/timestamps` | Toggle message timestamps |
+| `/keys` | Print keyboard shortcuts |
+| `/connect` | Open the connection drawer |
+| `/disconnect` | Disconnect from the relay |
+
+Palette keys: `↑`/`↓` move (and wrap), `Tab` completes the selection (`/nick `
+keeps a trailing space for commands that take arguments), `Enter` runs the
+selected command or completes it if it needs arguments, and `Esc` closes the
+palette without clearing the input. Submitting a `/command` directly also works
+with the palette closed; unknown commands print a hint instead of sending.
+
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
 | `index.html` | Static markup: setup panel, chat panel, settings page, footer. |
-| `src/main.ts` | Transport, UI wiring, nicknames, and the action loop. No crypto. |
+| `src/main.ts` | Transport, UI wiring, nicknames, slash commands, and the action loop. No crypto. |
+| `src/commands.ts` | Slash-command metadata and the pure filter/parse helpers. |
 | `src/appearance.ts` | Portable appearance types, storage, and CSS mapping. |
 | `src/settings-page.ts` | The `#/settings` page and live preview. |
 | `src/style.css` | Styles. |

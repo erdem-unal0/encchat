@@ -1,9 +1,11 @@
 # Customizing the web client
 
-The browser client has a dedicated settings page with a live chat preview. Open
-it with the **Settings** button in the header or by visiting `#/settings`
-directly. Settings are local to the browser, work before you connect, and
-opening the page does not close an active session.
+The conversation fills the browser window; connection details live in a drawer
+that slides out from the header **Connect** button (it opens automatically on
+first load). The browser client also has a dedicated settings page with a live
+chat preview. Open it with the **Settings** button in the header or by visiting
+`#/settings` directly. Settings are local to the browser, work before you
+connect, and opening the page does not close an active session.
 
 Changes apply to the preview and the running UI immediately. **Save** writes them
 to `localStorage`; **Revert** restores the last saved profile. The same page can
