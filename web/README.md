@@ -43,6 +43,10 @@ If PowerShell blocks the `npm.ps1` shim with an execution-policy error, call
 
 ## Using the app
 
+The conversation fills the window. The connection panel slides out from the
+header **Connect** button (it opens automatically on first load and closes once
+the room is joined).
+
 1. **Relay URL** — the WebSocket endpoint of `encchat-server`
    (default `ws://127.0.0.1:8787`).
 2. **Shared mnemonic** — the 24-word phrase both people agreed on out of band.
