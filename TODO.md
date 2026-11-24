@@ -50,12 +50,15 @@ schedule; items are grouped by area and roughly ordered by value. See
 ## CLI polish
 
 - [ ] **Tab-completion for command arguments** (currently completes command
-  names only).
+  names only; `/theme <Tab>` could list presets and `/nick <Tab>` could list
+  peers).
 - [ ] **Late joiners miss history.** A peer that joins after a message was sent
   never sees it. Consider a backfill on session establishment, or at least a
   clear notice.
-- [ ] More `TestBackend` UI coverage: terminal resize, very long lines, and
-  Unicode display width.
+- [ ] **Alternate key bindings.** Each action has one binding today; allow a
+  comma-separated list (for example, both `ctrl+c` and `ctrl+d` to quit).
+- [ ] **Per-room themes.** The config is global; a room-specific profile would
+  let one identity keep a different look from another.
 
 ## Housekeeping
 
@@ -75,4 +78,10 @@ schedule; items are grouped by area and roughly ordered by value. See
 - [x] Encrypted local state (Argon2id + XChaCha20-Poly1305).
 - [x] IRC-style CLI: scrollback, status bar, slash commands, and encrypted
   nickname announcements.
+- [x] **CLI customization:** a full-screen settings editor with live preview,
+  JSON config, nine theme presets, per-color overrides, configurable status bar
+  and layout, timestamps, behavior, prompt template, and remappable keys.
+- [x] Config-driven rendering with Unicode-aware wrapping, per-peer colors, an
+  unread counter that preserves your scroll position, and `TestBackend` coverage
+  for resize, tiny terminals, long lines, and wide characters.
 - [x] MIT + Apache-2.0 license files.

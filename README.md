@@ -76,7 +76,7 @@ audited or production-ready, and the on-disk/on-wire formats are not frozen.
 | `crates/cli`     | `encchat-cli` — terminal client (native core)                   |
 | `crates/wasm`    | `encchat-wasm` — wasm-bindgen wrapper around the core           |
 | `web/`           | TypeScript web UI (WIP)                                         |
-| `docs/`          | Threat model, ADRs, protocol notes                              |
+| `docs/`          | Threat model, ADRs, protocol notes, customization guide          |
 
 ## Quickstart
 
@@ -112,14 +112,47 @@ cargo run -p encchat-cli -- chat --server ws://127.0.0.1:8787 --mnemonic "<24 wo
 This opens an IRC-style full-screen client: a scrollback with timestamps, a
 status bar, and a persistent input line at the bottom. Messages appear as
 `<nick> body` once a peer announces a nickname (set yours with `--nick` or
-`/nick`), and fall back to the peer's short device id otherwise.
+`/nick`), and fall back to the peer's short device id otherwise. Long lines wrap,
+per-peer colors distinguish devices, and reading older messages no longer yanks
+you back to the bottom when something new arrives.
 
 Slash commands: `/help`, `/quit`, `/clear`, `/nick <name>`, `/who`, `/status`,
-`/fingerprint`, `/me <action>`. `Up`/`Down` recall input history, `PageUp`/
-`PageDown` scroll, `Tab` completes commands.
+`/fingerprint`, `/me <action>`, `/settings`, `/theme`, `/timestamps`, `/keys`,
+and `/config`. `Up`/`Down` recall input history, `PageUp`/`PageDown` scroll,
+`Tab` completes commands, and F1–F4 cover help, settings, timestamps, and themes.
 
 Use `--plain` (or run with stdout redirected) for the simple line-based mode,
 which is what the smoke test uses.
+
+## Customization
+
+The full-screen client is configurable without editing the binary: colors,
+layout, status-bar contents, timestamps, behavior, prompt, and key bindings.
+Open the in-terminal customizer with a live chat preview:
+
+```sh
+cargo run -p encchat-cli -- settings    # or press F2 inside a chat
+```
+
+Everything can also be changed non-interactively:
+
+```sh
+cargo run -p encchat-cli -- config keys
+cargo run -p encchat-cli -- config set theme.preset dracula
+cargo run -p encchat-cli -- config set layout.status_position bottom
+cargo run -p encchat-cli -- config set keys.quit ctrl+q
+cargo run -p encchat-cli -- config show
+```
+
+Settings are stored in the OS config directory (for example,
+`~/.config/encchat/config.json` or `%APPDATA%\encchat\config.json`), overridable
+with `--config PATH` or `ENCCHAT_CONFIG`. Use `--theme <name>` to preview a
+built-in theme for one session, or `/theme` to cycle one inside a chat.
+
+The customizer, the full setting reference, theme presets, color formats,
+key-binding syntax, and recipes are documented in
+[docs/customization.md](docs/customization.md). Invalid values and hand-edited
+files are validated and repaired at load time, and saves are atomic.
 
 Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
 
