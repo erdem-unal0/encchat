@@ -171,6 +171,9 @@ MITM handshake.
 - Multi-user presence, typing indicators, or delivery receipts beyond what the
   protocol needs.
 
+See [`TODO.md`](TODO.md) for the fuller, grouped list of planned work and known
+limitations.
+
 ## License
 
 Licensed under either of
