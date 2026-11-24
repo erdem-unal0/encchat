@@ -10,6 +10,9 @@ import {
   new_salt,
   open_state,
   encode_relay,
+  appearance_presets,
+  appearance_defaults,
+  validate_appearance,
 } from "../pkg/encchat_wasm.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -59,6 +62,17 @@ const received = b.handle_frame(aId, outs[0].data);
 const msg = received.find((x) => x.kind === "received");
 check("B decrypts the message", msg && msg.body === "hello world" && msg.sentAt === sentAt);
 
+// Nicknames A -> B
+check("A sets a nickname", a.set_nick("alice") === true);
+check("blank nickname is rejected", b.set_nick("   ") === false);
+check("A reports self nick", a.self_nick() === "alice");
+const nickOut = a.announce_nick(bId);
+check("announce_nick returns one frame", nickOut.length === 1);
+const nickActions = b.handle_frame(aId, nickOut[0].data);
+const nickAction = nickActions.find((x) => x.kind === "nick");
+check("B receives a nick action", nickAction && nickAction.from === aId && nickAction.nick === "alice");
+check("B stores the peer nick", b.peer_nicks().some((x) => x.device === aId && x.nick === "alice"));
+
 // Relay framing
 const relay = encode_relay(bId, step1);
 check("encode_relay returns bytes", relay instanceof Uint8Array && relay.length > step1.length);
@@ -77,6 +91,25 @@ try {
   threw = true;
 }
 check("wrong passphrase is rejected", threw);
+
+// Portable appearance document
+const presets = appearance_presets();
+check("ten appearance presets", presets.length === 10);
+check("presets include dracula", presets.some((p) => p.name === "dracula"));
+check("preset colors are strings", presets.every((p) => typeof p.background === "string"));
+const defaults = appearance_defaults();
+check("default appearance kind", defaults.kind === "encchat-appearance");
+check("default appearance version", defaults.version === 1);
+check("default theme resolves", typeof defaults.theme.background === "string");
+const nord = validate_appearance(JSON.stringify({ theme: { name: "nord" } }));
+check("nord preset resolves", nord.appearance.theme.background === "#2e3440");
+check("clean import has no warnings", nord.warnings.length === 0);
+const repaired = validate_appearance(JSON.stringify({ theme: { name: "custom", text: "not-a-color" } }));
+check("bad color is repaired", repaired.appearance.theme.text === "reset");
+check("repair is reported", repaired.warnings.length > 0);
+let badJson = false;
+try { validate_appearance("{nope"); } catch { badJson = true; }
+check("malformed appearance JSON is rejected", badJson);
 
 console.log(failures === 0 ? "\nALL PASSED" : `\n${failures} FAILED`);
 process.exit(failures === 0 ? 0 : 1);

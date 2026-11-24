@@ -563,9 +563,9 @@ mod tests {
         assert!(state.select_key("theme.preset"));
         assert_eq!(state.config.theme.name, "default");
         state.handle_key(key(KeyCode::Right));
-        assert_eq!(state.config.theme.name, "midnight");
+        assert_eq!(state.config.theme.name, Theme::PRESETS[1]);
         state.handle_key(key(KeyCode::Left));
-        assert_eq!(state.config.theme.name, "default");
+        assert_eq!(state.config.theme.name, Theme::PRESETS[0]);
     }
 
     #[test]

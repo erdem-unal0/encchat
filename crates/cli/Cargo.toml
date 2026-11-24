@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 encchat-core = { workspace = true }
+encchat-appearance = { workspace = true }
 clap = { version = "4", features = ["derive", "env"] }
 anyhow = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }

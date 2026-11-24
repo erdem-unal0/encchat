@@ -615,6 +615,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "edd0f118536f44f5ccd48bcb8b111bdc3de888b58c74639dfb034a357d0f206d"
 
 [[package]]
+name = "encchat-appearance"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "encchat-cli"
 version = "0.1.0"
 dependencies = [
@@ -623,6 +631,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dirs",
+ "encchat-appearance",
  "encchat-core",
  "futures-util",
  "ratatui",
@@ -675,6 +684,7 @@ dependencies = [
 name = "encchat-wasm"
 version = "0.1.0"
 dependencies = [
+ "encchat-appearance",
  "encchat-core",
  "getrandom 0.2.17",
  "js-sys",

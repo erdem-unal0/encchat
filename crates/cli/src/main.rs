@@ -1,5 +1,7 @@
+use std::fs;
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::{Parser, Subcommand};
 use encchat_core::Psk;
 
@@ -24,7 +26,8 @@ mod ui;
     about,
     after_help = "Customize the client:        encchat settings\n\
                   Change one setting:          encchat config set theme.preset dracula\n\
-                  See every setting and value: encchat config keys"
+                  See every setting and value: encchat config keys\n\
+                  Portable appearance:         encchat config export-appearance [PATH] | import-appearance PATH"
 )]
 struct Cli {
     /// Settings file to use (defaults to the OS config directory).
@@ -108,6 +111,10 @@ enum ConfigAction {
     Reset,
     /// List the built-in themes.
     Themes,
+    /// Write the portable appearance profile shared with the web client.
+    ExportAppearance { path: Option<PathBuf> },
+    /// Apply a portable appearance profile (from the web client or another CLI).
+    ImportAppearance { path: PathBuf },
 }
 
 #[tokio::main]
@@ -205,6 +212,38 @@ fn run_config_action(action: ConfigAction, config_path: &std::path::Path) -> any
                 let marker = if *name == config.theme.name { "*" } else { " " };
                 println!("{marker} {name}");
             }
+        }
+        ConfigAction::ExportAppearance { path } => {
+            let (appearance, notices) = config::appearance_from_config(&config);
+            for notice in notices {
+                eprintln!("warning: {notice}");
+            }
+            match path {
+                Some(path) => {
+                    config::save_appearance(&path, &appearance)?;
+                    println!("Wrote appearance to {}", path.display());
+                }
+                None => println!("{}", appearance.to_json_pretty()),
+            }
+        }
+        ConfigAction::ImportAppearance { path } => {
+            let text = fs::read_to_string(&path)
+                .with_context(|| format!("could not read {}", path.display()))?;
+            let (appearance, warnings) =
+                encchat_appearance::Appearance::from_json(&text).map_err(anyhow::Error::msg)?;
+            for warning in &warnings {
+                eprintln!("warning: {warning}");
+            }
+            for notice in config::apply_appearance(&mut config, &appearance) {
+                eprintln!("warning: {notice}");
+            }
+            config::save(config_path, &config)?;
+            println!(
+                "Imported appearance from {} (theme {})",
+                path.display(),
+                config.theme.name
+            );
+            println!("Saved to {}", config_path.display());
         }
     }
     Ok(())

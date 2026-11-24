@@ -1,0 +1,11 @@
+[package]
+name = "encchat-appearance"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Portable appearance and theme settings shared by the encchat CLI and web client. No I/O."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

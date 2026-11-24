@@ -679,8 +679,8 @@ mod tests {
         assert!(app.config.timestamps.enabled);
         assert!(!app.toggle_timestamps());
         assert!(app.toggle_timestamps());
-        assert_eq!(app.cycle_theme(), "midnight");
-        assert_eq!(app.cycle_theme(), "dracula");
+        assert_eq!(app.cycle_theme(), Theme::PRESETS[1]);
+        assert_eq!(app.cycle_theme(), Theme::PRESETS[2]);
         app.config.theme.name = "custom".to_string();
         assert_eq!(app.cycle_theme(), "default");
     }

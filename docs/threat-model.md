@@ -33,6 +33,9 @@ independent.
 | Local history + ratchet state | High; past and future messages | Device disk, encrypted at rest |
 | Ratchet session keys | High; compromise breaks forward secrecy for that session | Endpoint RAM, encrypted local state |
 | Passphrase (local storage) | High; unlocks the local store | Human memory, OS keychain (CLI) |
+| Appearance settings | Low; no message or key material | `config.json` (CLI), plain `localStorage` (web) |
+| Nickname | Low; a cosmetic self-asserted label | Encrypted `Nick` payload, peer memory |
+| Local peer aliases | Low; maps a device ID to a name, never transmitted | `localStorage` only |
 
 The PSK is the root of everything: it determines the room, authenticates the
 handshake, and MACs device registrations. Losing it means losing the ability to
@@ -142,7 +145,7 @@ Be explicit: this is not a metadata-private system.
 | --- | --- |
 | Relay server (and its host) | Room ID (16 bytes), connecting device IDs, IP addresses, connection times and durations, message counts, ciphertext sizes, delivery timing, which devices are online together |
 | Passive network observer | Same as above, modulo what TLS hides (TLS hides frame contents but not connection endpoints/timing) |
-| Both participants | Each other's device IDs and online status |
+| Both participants | Each other's device IDs, online status, and advertised nicknames |
 | Anyone with the PSK | Room ID, ability to join, full transcript |
 
 Consequences worth stating plainly:
@@ -255,17 +258,26 @@ provide a globally consistent device list; peers learn devices as they appear.
 assumes a device's local state moves forward and is not rewound; there is no
 built-in detection of stale state beyond decryption failures.
 
-**R8. Implementation risk.** This is unaudited, early-stage code. Constant-time
+**R8. Nickname and appearance spoofing.** A nickname is a self-asserted label,
+not an identity: either side can choose any name, including one that looks like
+the other person. Local aliases are the mitigation on the web; they override the
+peer's advertised nickname locally and are never sent anywhere. An imported
+appearance profile is untrusted input, but it can only change local colors,
+layout and labels: there is no custom CSS, script or remote asset loading. If
+custom CSS is ever added, treat it as a new exfiltration and UI-spoofing surface
+and extend this section.
+
+**R9. Implementation risk.** This is unaudited, early-stage code. Constant-time
 handling of secrets, zeroization, error paths that leak secrets, and
 serialization edge cases are exactly the places where implementations break, and
 none of it has been independently reviewed. Assume bugs exist.
 
-**R9. No forward secrecy against PSK compromise.** The PSK authenticates the
+**R10. No forward secrecy against PSK compromise.** The PSK authenticates the
 handshake but does not decrypt message streams directly; still, anyone who holds
 the PSK can *join* and read future messages, and a compromised endpoint with the
 PSK is game over. Forward secrecy protects the ratchet state, not membership.
 
-**R10. Traffic analysis and coercion.** An observer can tell that two parties are
+**R11. Traffic analysis and coercion.** An observer can tell that two parties are
 talking, how much, and when. In a jurisdiction that can compel disclosure of a
 device or a person, "the ciphertext is unreadable" is not a defense against being
 forced to hand over the passphrase or the 24 words.

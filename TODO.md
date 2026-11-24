@@ -7,9 +7,6 @@ schedule; items are grouped by area and roughly ordered by value. See
 
 ## Now / next
 
-- [ ] **Surface nicknames in the web client.** The browser ignores
-  `PayloadKind::Nick` and always shows the short device id. Show `<nick>` when
-  known, and let the user set one (the CLI has `--nick` / `/nick`).
 - [ ] **`/me` as a real action.** Today `/me waves` sends the literal text
   `* <nick> waves`, so a receiver sees `<nick> * <nick> waves`. Add a
   `PayloadKind::Action` and render it as an emote.
@@ -38,6 +35,12 @@ schedule; items are grouped by area and roughly ordered by value. See
 - [ ] **Web client integrity.** A malicious host can serve modified JavaScript.
   Mitigate with pinned / reproducible builds or a signed release, so the served
   bundle can be verified out of band.
+- [ ] **Custom CSS for the web client (deferred).** Arbitrary CSS can
+  exfiltrate data with `url(...)` and can visually spoof the UI, which is
+  especially dangerous when an appearance profile is imported from someone
+  else. If this is ever added, restrict it to a sanitized, opt-in subset (no
+  `@import`, `url()`, or bindings), validate imports as untrusted input, and
+  document the residual spoofing risk.
 
 ## Product / features (deliberately deferred)
 
@@ -79,8 +82,16 @@ schedule; items are grouped by area and roughly ordered by value. See
 - [x] IRC-style CLI: scrollback, status bar, slash commands, and encrypted
   nickname announcements.
 - [x] **CLI customization:** a full-screen settings editor with live preview,
-  JSON config, nine theme presets, per-color overrides, configurable status bar
+  JSON config, ten theme presets, per-color overrides, configurable status bar
   and layout, timestamps, behavior, prompt template, and remappable keys.
+- [x] **Shared appearance profiles:** a pure `encchat-appearance` crate owns the
+  presets and a portable JSON document; the CLI and web client both read and
+  write it (`encchat config export-appearance` / `import-appearance`).
+- [x] **Web customization:** a `#/settings` page with a live chat preview,
+  themes and per-color overrides, typography, bubble/IRC layouts, density,
+  timestamps, labels, local peer aliases, and JSON import/export.
+- [x] **Web nicknames:** set and announce a nickname over the existing encrypted
+  `PayloadKind::Nick`, show peer nicknames, and keep local aliases on-device.
 - [x] Config-driven rendering with Unicode-aware wrapping, per-peer colors, an
   unread counter that preserves your scroll position, and `TestBackend` coverage
   for resize, tiny terminals, long lines, and wide characters.

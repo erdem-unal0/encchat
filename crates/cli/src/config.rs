@@ -14,6 +14,11 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, Context, Result};
 use chrono::format::{Item, StrftimeItems};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use encchat_appearance::{
+    timestamp_to_strftime, validate_timestamp_format, Appearance, ColorSpec as SharedColor,
+    Density, Labels as AppearanceLabels, Layout as AppearanceLayout, MessageStyle,
+    Theme as AppearanceTheme, Timestamps as AppearanceTimestamps, DEFAULT_TIMESTAMP_FORMAT,
+};
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -181,144 +186,12 @@ pub struct Theme {
 }
 
 impl Theme {
-    pub const PRESETS: &'static [&'static str] = &[
-        "default",
-        "midnight",
-        "dracula",
-        "gruvbox",
-        "solarized",
-        "nord",
-        "mono",
-        "matrix",
-        "sunset",
-    ];
+    /// Every built-in theme, in order. The names are owned by `encchat-appearance`.
+    pub const PRESETS: &'static [&'static str] = encchat_appearance::Theme::PRESETS;
 
     /// Look up a preset by name (case-insensitive).
     pub fn preset(name: &str) -> Option<Self> {
-        let name = name.trim().to_ascii_lowercase();
-        let (colors, palette): ([&str; 14], &[&str]) = match name.as_str() {
-            "default" => (
-                [
-                    "reset",
-                    "reset",
-                    "blue",
-                    "white",
-                    "lightcyan",
-                    "green",
-                    "cyan",
-                    "darkgray",
-                    "yellow",
-                    "lightred",
-                    "cyan",
-                    "reset",
-                    "reset",
-                    "darkgray",
-                ],
-                &[
-                    "green",
-                    "cyan",
-                    "magenta",
-                    "yellow",
-                    "lightblue",
-                    "lightgreen",
-                ],
-            ),
-            "midnight" => (
-                [
-                    "#0b1020", "#e2e8f0", "#1e1b4b", "#e2e8f0", "#38bdf8", "#34d399", "#a78bfa",
-                    "#64748b", "#fbbf24", "#f87171", "#38bdf8", "#e2e8f0", "#111827", "#334155",
-                ],
-                &[
-                    "#34d399", "#38bdf8", "#a78bfa", "#fbbf24", "#f472b6", "#94a3b8",
-                ],
-            ),
-            "dracula" => (
-                [
-                    "#282a36", "#f8f8f2", "#44475a", "#f8f8f2", "#8be9fd", "#50fa7b", "#ff79c6",
-                    "#6272a4", "#f1fa8c", "#ff5555", "#bd93f9", "#f8f8f2", "#21222c", "#6272a4",
-                ],
-                &[
-                    "#50fa7b", "#8be9fd", "#ff79c6", "#f1fa8c", "#bd93f9", "#ffb86c",
-                ],
-            ),
-            "gruvbox" => (
-                [
-                    "#282828", "#ebdbb2", "#3c3836", "#ebdbb2", "#fabd2f", "#b8bb26", "#83a598",
-                    "#928374", "#d79921", "#fb4934", "#8ec07c", "#ebdbb2", "#1d2021", "#504945",
-                ],
-                &[
-                    "#b8bb26", "#83a598", "#d3869b", "#fabd2f", "#8ec07c", "#fe8019",
-                ],
-            ),
-            "solarized" => (
-                [
-                    "#002b36", "#93a1a1", "#073642", "#93a1a1", "#2aa198", "#859900", "#268bd2",
-                    "#586e75", "#b58900", "#dc322f", "#6c71c4", "#93a1a1", "#00252e", "#586e75",
-                ],
-                &[
-                    "#859900", "#268bd2", "#d33682", "#b58900", "#2aa198", "#6c71c4",
-                ],
-            ),
-            "nord" => (
-                [
-                    "#2e3440", "#eceff4", "#3b4252", "#eceff4", "#88c0d0", "#a3be8c", "#81a1c1",
-                    "#4c566a", "#ebcb8b", "#bf616a", "#b48ead", "#eceff4", "#272c36", "#4c566a",
-                ],
-                &[
-                    "#a3be8c", "#88c0d0", "#b48ead", "#ebcb8b", "#81a1c1", "#8fbcbb",
-                ],
-            ),
-            "mono" => (
-                [
-                    "reset", "reset", "darkgray", "white", "white", "white", "gray", "darkgray",
-                    "gray", "lightred", "white", "reset", "reset", "darkgray",
-                ],
-                &["white", "gray", "lightgray", "darkgray"],
-            ),
-            "matrix" => (
-                [
-                    "#000000", "#00ff66", "#001a00", "#00ff66", "#7cff9b", "#00ff66", "#00cc55",
-                    "#007733", "#b6ff00", "#ff3355", "#00ff99", "#00ff66", "#001100", "#005522",
-                ],
-                &[
-                    "#00ff66", "#7cff9b", "#00cc55", "#b6ff00", "#00ff99", "#009944",
-                ],
-            ),
-            "sunset" => (
-                [
-                    "#1a1020", "#ffe8d6", "#3b1f2b", "#ffe8d6", "#ffb86b", "#ff9e64", "#bb9af7",
-                    "#8a6f7d", "#e0af68", "#f7768e", "#ff9e64", "#ffe8d6", "#241426", "#5a3a4a",
-                ],
-                &[
-                    "#ff9e64", "#bb9af7", "#ffb86b", "#f7768e", "#e0af68", "#7dcfff",
-                ],
-            ),
-            _ => return None,
-        };
-        Some(Self::from_parts(&name, colors, palette))
-    }
-
-    fn from_parts(name: &str, colors: [&str; 14], palette: &[&str]) -> Self {
-        let [background, text, status_bg, status_fg, status_accent, incoming_nick, outgoing_nick, timestamp, system, error, input_prompt, input_text, input_bg, border] =
-            colors;
-        Self {
-            name: name.to_string(),
-            background: ColorSpec::new(background),
-            text: ColorSpec::new(text),
-            status_bg: ColorSpec::new(status_bg),
-            status_fg: ColorSpec::new(status_fg),
-            status_accent: ColorSpec::new(status_accent),
-            incoming_nick: ColorSpec::new(incoming_nick),
-            outgoing_nick: ColorSpec::new(outgoing_nick),
-            timestamp: ColorSpec::new(timestamp),
-            system: ColorSpec::new(system),
-            error: ColorSpec::new(error),
-            input_prompt: ColorSpec::new(input_prompt),
-            input_text: ColorSpec::new(input_text),
-            input_bg: ColorSpec::new(input_bg),
-            border: ColorSpec::new(border),
-            peer_palette: palette.iter().map(|c| ColorSpec::new(*c)).collect(),
-        }
+        encchat_appearance::Theme::preset(name).map(theme_from_appearance)
     }
 }
 
@@ -981,17 +854,196 @@ pub fn load(path: &Path) -> LoadedConfig {
 
 /// Pretty-print and atomically write the config.
 pub fn save(path: &Path, config: &Config) -> Result<()> {
+    let mut config = config.clone();
+    config.version = CONFIG_VERSION;
+    let text = serde_json::to_string_pretty(&config)?;
+    write_atomically(path, &text)
+}
+
+/// Pretty-print and atomically write a portable appearance document.
+pub fn save_appearance(path: &Path, appearance: &Appearance) -> Result<()> {
+    write_atomically(path, &appearance.to_json_pretty())
+}
+
+fn write_atomically(path: &Path, text: &str) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .with_context(|| format!("could not create {}", parent.display()))?;
     }
-    let mut config = config.clone();
-    config.version = CONFIG_VERSION;
-    let text = serde_json::to_string_pretty(&config)?;
     let tmp = path.with_extension("tmp");
     fs::write(&tmp, text).with_context(|| format!("could not write {}", tmp.display()))?;
     fs::rename(&tmp, path).with_context(|| format!("could not replace {}", path.display()))?;
     Ok(())
+}
+
+/// The one notice printed when a profile carries settings only the web renders.
+const WEB_ONLY_NOTICE: &str = "typography, message style, density, max width, unread count and \
+                                peer/device label switches apply to the web client only";
+
+/// Convert a shared theme into the CLI's ratatui-parsing type.
+fn theme_from_appearance(theme: AppearanceTheme) -> Theme {
+    Theme {
+        name: theme.name,
+        background: ColorSpec::new(theme.background.as_str()),
+        text: ColorSpec::new(theme.text.as_str()),
+        status_bg: ColorSpec::new(theme.status_bg.as_str()),
+        status_fg: ColorSpec::new(theme.status_fg.as_str()),
+        status_accent: ColorSpec::new(theme.status_accent.as_str()),
+        incoming_nick: ColorSpec::new(theme.incoming_nick.as_str()),
+        outgoing_nick: ColorSpec::new(theme.outgoing_nick.as_str()),
+        timestamp: ColorSpec::new(theme.timestamp.as_str()),
+        system: ColorSpec::new(theme.system.as_str()),
+        error: ColorSpec::new(theme.error.as_str()),
+        input_prompt: ColorSpec::new(theme.input_prompt.as_str()),
+        input_text: ColorSpec::new(theme.input_text.as_str()),
+        input_bg: ColorSpec::new(theme.input_bg.as_str()),
+        border: ColorSpec::new(theme.border.as_str()),
+        peer_palette: theme
+            .peer_palette
+            .iter()
+            .map(|color| ColorSpec::new(color.as_str()))
+            .collect(),
+    }
+}
+
+/// Convert the CLI's theme back to the portable type.
+fn theme_to_appearance(theme: &Theme) -> AppearanceTheme {
+    AppearanceTheme {
+        name: theme.name.clone(),
+        background: SharedColor::new(theme.background.as_str()),
+        text: SharedColor::new(theme.text.as_str()),
+        status_bg: SharedColor::new(theme.status_bg.as_str()),
+        status_fg: SharedColor::new(theme.status_fg.as_str()),
+        status_accent: SharedColor::new(theme.status_accent.as_str()),
+        incoming_nick: SharedColor::new(theme.incoming_nick.as_str()),
+        outgoing_nick: SharedColor::new(theme.outgoing_nick.as_str()),
+        timestamp: SharedColor::new(theme.timestamp.as_str()),
+        system: SharedColor::new(theme.system.as_str()),
+        error: SharedColor::new(theme.error.as_str()),
+        input_prompt: SharedColor::new(theme.input_prompt.as_str()),
+        input_text: SharedColor::new(theme.input_text.as_str()),
+        input_bg: SharedColor::new(theme.input_bg.as_str()),
+        border: SharedColor::new(theme.border.as_str()),
+        peer_palette: theme
+            .peer_palette
+            .iter()
+            .map(|color| SharedColor::new(color.as_str()))
+            .collect(),
+    }
+}
+
+/// Translate a CLI strftime format into the portable token language.
+///
+/// Returns `None` when the format uses a directive the portable language cannot
+/// express (`%b`, `%p`, ...) or when the translation would not validate, so the
+/// caller can fall back instead of exporting something the web cannot render.
+fn strftime_to_timestamp(format: &str) -> Option<String> {
+    let mut out = String::with_capacity(format.len());
+    let mut chars = format.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '%' {
+            out.push(ch);
+            continue;
+        }
+        out.push_str(match chars.next()? {
+            'Y' => "YYYY",
+            'm' => "MM",
+            'd' => "DD",
+            'H' => "HH",
+            'M' => "mm",
+            'S' => "ss",
+            '%' => "%",
+            _ => return None,
+        });
+    }
+    validate_timestamp_format(&out).then_some(out)
+}
+
+/// Build the portable appearance profile for `config`.
+///
+/// Only what both frontends can express is copied, so keybindings, mnemonics,
+/// passphrases, server URLs, state paths and nicknames never leave the CLI.
+/// The returned strings are notices for the caller to print on stderr.
+pub fn appearance_from_config(config: &Config) -> (Appearance, Vec<String>) {
+    let mut notices = Vec::new();
+    let format = strftime_to_timestamp(&config.timestamps.format).unwrap_or_else(|| {
+        notices.push(format!(
+            "timestamps.format {:?} has no portable equivalent; exporting {DEFAULT_TIMESTAMP_FORMAT:?}",
+            config.timestamps.format
+        ));
+        DEFAULT_TIMESTAMP_FORMAT.to_string()
+    });
+
+    let appearance = Appearance {
+        theme: theme_to_appearance(&config.theme),
+        timestamps: AppearanceTimestamps {
+            enabled: config.timestamps.enabled,
+            format,
+            system: config.timestamps.system,
+        },
+        layout: AppearanceLayout {
+            // The CLI is an IRC-style line client; the web-only knobs keep
+            // neutral defaults so an import does not disturb the browser.
+            message_style: MessageStyle::Irc,
+            density: Density::Comfortable,
+            max_width: 1100,
+            show_status_bar: config.layout.status_position != StatusPosition::Hidden,
+            show_hints: config.layout.show_hints,
+            input_border: config.layout.input_border,
+            auto_scroll: config.behavior.auto_scroll,
+            peer_colors: config.behavior.peer_colors,
+            ..AppearanceLayout::default()
+        },
+        labels: AppearanceLabels {
+            own_fallback: config.behavior.own_nick_fallback.clone(),
+            ..AppearanceLabels::default()
+        },
+        ..Appearance::default()
+    };
+    (appearance, notices)
+}
+
+/// Apply the subset of `appearance` the terminal client can express.
+///
+/// Returns notices for stderr, including one for the web-only fields and any
+/// repairs the CLI's own sanitizer makes. Unknown theme names fall back to a
+/// custom theme instead of failing.
+pub fn apply_appearance(config: &mut Config, appearance: &Appearance) -> Vec<String> {
+    let mut notices = vec![WEB_ONLY_NOTICE.to_string()];
+
+    config.theme = theme_from_appearance(appearance.theme.clone());
+
+    config.timestamps.enabled = appearance.timestamps.enabled;
+    config.timestamps.system = appearance.timestamps.system;
+    let format = timestamp_to_strftime(&appearance.timestamps.format);
+    config.timestamps.format = if valid_strftime(&format) {
+        format
+    } else {
+        notices.push(format!(
+            "timestamps.format {:?} could not be converted to strftime; using {}",
+            appearance.timestamps.format,
+            Timestamps::default().format
+        ));
+        Timestamps::default().format
+    };
+
+    // The portable document only says whether a status bar is wanted. Keep an
+    // existing top/bottom choice, but restore one when the CLI was hiding it.
+    if appearance.layout.show_status_bar {
+        if config.layout.status_position == StatusPosition::Hidden {
+            config.layout.status_position = StatusPosition::Top;
+        }
+    } else {
+        config.layout.status_position = StatusPosition::Hidden;
+    }
+    config.layout.show_hints = appearance.layout.show_hints;
+    config.layout.input_border = appearance.layout.input_border;
+    config.behavior.auto_scroll = appearance.layout.auto_scroll;
+    config.behavior.peer_colors = appearance.layout.peer_colors;
+    config.behavior.own_nick_fallback = appearance.labels.own_fallback.clone();
+
+    config.sanitize(&mut notices);
+    notices
 }
 
 fn valid_strftime(format: &str) -> bool {
@@ -2213,5 +2265,184 @@ mod tests {
         assert!(config.timestamps.enabled);
         config.reset_key("theme.preset").unwrap();
         assert_eq!(config.theme.name, "default");
+    }
+
+    /// Compare every color as text, which is what the preset promises.
+    fn assert_same_colors(cli: &Theme, shared: &AppearanceTheme, name: &str) {
+        let pairs = [
+            ("background", &cli.background, &shared.background),
+            ("text", &cli.text, &shared.text),
+            ("status_bg", &cli.status_bg, &shared.status_bg),
+            ("status_fg", &cli.status_fg, &shared.status_fg),
+            ("status_accent", &cli.status_accent, &shared.status_accent),
+            ("incoming_nick", &cli.incoming_nick, &shared.incoming_nick),
+            ("outgoing_nick", &cli.outgoing_nick, &shared.outgoing_nick),
+            ("timestamp", &cli.timestamp, &shared.timestamp),
+            ("system", &cli.system, &shared.system),
+            ("error", &cli.error, &shared.error),
+            ("input_prompt", &cli.input_prompt, &shared.input_prompt),
+            ("input_text", &cli.input_text, &shared.input_text),
+            ("input_bg", &cli.input_bg, &shared.input_bg),
+            ("border", &cli.border, &shared.border),
+        ];
+        for (label, ours, theirs) in pairs {
+            assert_eq!(ours.as_str(), theirs.as_str(), "{name}.{label}");
+        }
+        assert_eq!(cli.peer_palette.len(), shared.peer_palette.len(), "{name}");
+        for (ours, theirs) in cli.peer_palette.iter().zip(&shared.peer_palette) {
+            assert_eq!(ours.as_str(), theirs.as_str(), "{name} palette");
+        }
+    }
+
+    #[test]
+    fn preset_colors_match_the_shared_crate() {
+        assert_eq!(Theme::PRESETS, encchat_appearance::Theme::PRESETS);
+        assert_eq!(Theme::PRESETS.len(), 10);
+        for name in Theme::PRESETS {
+            let cli = Theme::preset(name).unwrap_or_else(|| panic!("missing preset {name}"));
+            let shared = encchat_appearance::Theme::preset(name)
+                .unwrap_or_else(|| panic!("shared crate is missing {name}"));
+            assert_eq!(cli.name, *name);
+            assert_same_colors(&cli, &shared, name);
+        }
+    }
+
+    #[test]
+    fn unknown_preset_is_still_none() {
+        assert!(Theme::preset("nope").is_none());
+        assert!(Theme::preset("").is_none());
+    }
+
+    #[test]
+    fn appearance_round_trip_preserves_cli_settings() {
+        let mut config = Config::default();
+        config.set("theme.preset", "gruvbox").unwrap();
+        config.set("theme.incoming_nick", "#123456").unwrap();
+        config.set("timestamps.enabled", "false").unwrap();
+        config.set("timestamps.format", "%d %H:%M").unwrap();
+        config.set("timestamps.system", "false").unwrap();
+        config.set("layout.show_hints", "false").unwrap();
+        config.set("layout.input_border", "false").unwrap();
+        config.set("layout.status_position", "bottom").unwrap();
+        config.set("behavior.auto_scroll", "true").unwrap();
+        config.set("behavior.peer_colors", "false").unwrap();
+        config.set("behavior.own_nick_fallback", "tester").unwrap();
+
+        let (appearance, notices) = appearance_from_config(&config);
+        assert!(notices.is_empty(), "{notices:?}");
+        assert_eq!(appearance.layout.message_style, MessageStyle::Irc);
+        assert_eq!(appearance.layout.density, Density::Comfortable);
+        assert_eq!(appearance.layout.max_width, 1100);
+        assert!(appearance.layout.show_status_bar);
+        assert_eq!(appearance.labels.own_fallback, "tester");
+
+        let (parsed, warnings) = Appearance::from_json(&appearance.to_json_pretty()).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        let mut restored = Config::default();
+        // `show_status_bar: true` keeps the position the CLI already has.
+        restored.set("layout.status_position", "bottom").unwrap();
+        let notices = apply_appearance(&mut restored, &parsed);
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].contains("web client"), "{notices:?}");
+
+        assert_eq!(restored.theme.name, config.theme.name);
+        assert!(same_theme_colors(&restored.theme, &config.theme));
+        assert_same_colors(&restored.theme, &parsed.theme, "round trip");
+        assert_eq!(restored.timestamps.enabled, config.timestamps.enabled);
+        assert_eq!(restored.timestamps.system, config.timestamps.system);
+        assert_eq!(restored.timestamps.format, "%d %H:%M");
+        assert_eq!(restored.layout.show_hints, config.layout.show_hints);
+        assert_eq!(restored.layout.input_border, config.layout.input_border);
+        assert_eq!(restored.layout.status_position, StatusPosition::Bottom);
+        assert_eq!(restored.behavior.auto_scroll, config.behavior.auto_scroll);
+        assert_eq!(restored.behavior.peer_colors, config.behavior.peer_colors);
+        assert_eq!(
+            restored.behavior.own_nick_fallback,
+            config.behavior.own_nick_fallback
+        );
+    }
+
+    #[test]
+    fn hidden_status_bar_round_trips_as_false() {
+        let mut config = Config::default();
+        config.set("layout.status_position", "hidden").unwrap();
+        let (appearance, notices) = appearance_from_config(&config);
+        assert!(notices.is_empty());
+        assert!(!appearance.layout.show_status_bar);
+
+        let mut restored = Config::default();
+        apply_appearance(&mut restored, &appearance);
+        assert_eq!(restored.layout.status_position, StatusPosition::Hidden);
+
+        // `show_status_bar: true` keeps a top/bottom choice, but restores a bar
+        // when the CLI was hiding it.
+        let mut shown = Config::default();
+        shown.set("layout.status_position", "bottom").unwrap();
+        let mut appearance = appearance;
+        appearance.layout.show_status_bar = true;
+        apply_appearance(&mut shown, &appearance);
+        assert_eq!(shown.layout.status_position, StatusPosition::Bottom);
+
+        let mut previously_hidden = Config::default();
+        previously_hidden
+            .set("layout.status_position", "hidden")
+            .unwrap();
+        apply_appearance(&mut previously_hidden, &appearance);
+        assert_eq!(
+            previously_hidden.layout.status_position,
+            StatusPosition::Top
+        );
+    }
+
+    #[test]
+    fn strftime_reverse_mapping_falls_back_with_a_notice() {
+        assert_eq!(
+            strftime_to_timestamp("%H:%M:%S").as_deref(),
+            Some("HH:mm:ss")
+        );
+        assert_eq!(
+            strftime_to_timestamp("%Y-%m-%d").as_deref(),
+            Some("YYYY-MM-DD")
+        );
+        assert_eq!(strftime_to_timestamp("%b"), None);
+        assert_eq!(strftime_to_timestamp("%d %b %H:%M"), None);
+        assert_eq!(strftime_to_timestamp("%H:%M:%"), None);
+
+        let mut config = Config::default();
+        config.set("timestamps.format", "%d %b %H:%M").unwrap();
+        let (appearance, notices) = appearance_from_config(&config);
+        assert_eq!(appearance.timestamps.format, DEFAULT_TIMESTAMP_FORMAT);
+        assert_eq!(notices.len(), 1, "{notices:?}");
+        assert!(notices[0].contains("timestamps.format"), "{notices:?}");
+    }
+
+    #[test]
+    fn import_maps_portable_timestamp_tokens_to_strftime() {
+        let (appearance, warnings) =
+            Appearance::from_json(r#"{"timestamps":{"format":"DD MMM YYYY HH:mm:ss"}}"#).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+
+        let mut config = Config::default();
+        apply_appearance(&mut config, &appearance);
+        assert_eq!(config.timestamps.format, "%d MMM %Y %H:%M:%S");
+        assert!(config.timestamps.format.contains("%d"));
+        assert!(valid_strftime(&config.timestamps.format));
+    }
+
+    #[test]
+    fn importing_an_unknown_theme_name_warns_without_panicking() {
+        let mut appearance = Appearance::default();
+        appearance.theme.name = "neon".to_string();
+        appearance.theme.background = SharedColor::new("#123456");
+
+        let mut config = Config::default();
+        let notices = apply_appearance(&mut config, &appearance);
+        assert!(
+            notices.iter().any(|notice| notice.contains("neon")),
+            "{notices:?}"
+        );
+        assert_eq!(config.theme.name, "custom");
+        assert_eq!(config.theme.background.as_str(), "#123456");
     }
 }

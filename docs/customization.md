@@ -1,9 +1,13 @@
-# Customizing the CLI
+# Customizing the clients
 
 The terminal client is configurable at runtime, from a JSON file, from the
 command line, and from an interactive full-screen customizer with a live chat
 preview. Nothing here is required to use `encchat`; the defaults match the
 original IRC-style look.
+
+Themes, colors, timestamps and the portable appearance profile are shared with
+the web client, which has its own settings page with a live preview. See
+[web-customization.md](web-customization.md) for the browser side.
 
 ## Three ways to change settings
 
@@ -87,12 +91,35 @@ $ encchat config set layout.scroll_step 0
 Error: layout.scroll_step must be between 1 and 100
 ```
 
+### Portable appearance profile
+
+`config export-appearance` writes the subset both frontends understand (theme,
+timestamps, status-bar visibility, hints, input border, auto-scroll, peer
+colors, and the fallback label). With no path it prints to stdout:
+
+```sh
+encchat config export-appearance ./appearance.json
+encchat config import-appearance ./appearance.json
+```
+
+The profile never contains key bindings, the prompt template, mnemonics,
+passwords, the server URL, the state path or your nickname. Those stay in
+`config.json` on the CLI, and in `localStorage` in the browser. Exporting from
+the CLI sets the message style to `irc` and leaves web-only typography at its
+defaults; importing a web profile applies the fields the terminal can render
+and prints one notice about the rest.
+
+The schema lives in `crates/appearance` and is versioned (`version: 1`,
+`kind: "encchat-appearance"`). Unknown fields are ignored, repairable values are
+clamped with warnings, and a newer version loads with a warning instead of
+failing.
+
 ## Themes
 
-Nine presets ship in the binary:
+Ten presets ship in the binary:
 
-`default`, `midnight`, `dracula`, `gruvbox`, `solarized`, `nord`, `mono`,
-`matrix`, `sunset`.
+`default`, `light`, `midnight`, `dracula`, `gruvbox`, `solarized`, `nord`,
+`mono`, `matrix`, `sunset`.
 
 Switch persistently:
 

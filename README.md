@@ -9,10 +9,12 @@ a 24-word BIP39 mnemonic so it can be read aloud. Everything else — room
 derivation, handshake, message encryption, multi-device registration — follows
 from that key.
 
-**Status: working core, CLI and relay.** The Rust core, the CLI client and the
-relay server build and pass their tests, including an end-to-end test that runs
-two clients through a real relay. The web UI is in progress. Nothing here is
-audited or production-ready, and the on-disk/on-wire formats are not frozen.
+**Status: working core, CLI, relay and web client.** The Rust core, the CLI
+client, the relay server and the WASM-backed browser client build and pass their
+tests, including an end-to-end test that runs two clients through a real relay.
+Both frontends share one appearance model and support themes, layout and
+nicknames. Nothing here is audited or production-ready, and the
+on-disk/on-wire formats are not frozen.
 
 ## Design at a glance
 
@@ -75,8 +77,9 @@ audited or production-ready, and the on-disk/on-wire formats are not frozen.
 | `crates/server`  | `encchat-server` — blind WebSocket relay and TTL mailbox        |
 | `crates/cli`     | `encchat-cli` — terminal client (native core)                   |
 | `crates/wasm`    | `encchat-wasm` — wasm-bindgen wrapper around the core           |
-| `web/`           | TypeScript web UI (WIP)                                         |
-| `docs/`          | Threat model, ADRs, protocol notes, customization guide          |
+| `crates/appearance` | Portable themes, layout, labels and timestamp settings      |
+| `web/`           | TypeScript web UI                                               |
+| `docs/`          | Threat model, ADRs, protocol notes, customization guides        |
 
 ## Quickstart
 
@@ -144,6 +147,22 @@ cargo run -p encchat-cli -- config set keys.quit ctrl+q
 cargo run -p encchat-cli -- config show
 ```
 
+The web client has the same idea at `#/settings` (the gear in the header): a
+live preview, themes and per-color overrides, typography, bubble or IRC layout,
+density, timestamps, labels, and local peer aliases. Settings are stored in
+`localStorage` and can be exported or imported as JSON.
+
+The appearance profile is portable between the two clients:
+
+```sh
+cargo run -p encchat-cli -- config export-appearance ./appearance.json
+cargo run -p encchat-cli -- config import-appearance ./appearance.json
+```
+
+The shared document is defined by `encchat-appearance`; it deliberately contains
+no keys, mnemonics, server URLs or nicknames. CLI-only fields such as key
+bindings and the prompt template stay in `config.json`.
+
 Settings are stored in the OS config directory (for example,
 `~/.config/encchat/config.json` or `%APPDATA%\encchat\config.json`), overridable
 with `--config PATH` or `ENCCHAT_CONFIG`. Use `--theme <name>` to preview a
@@ -151,8 +170,10 @@ built-in theme for one session, or `/theme` to cycle one inside a chat.
 
 The customizer, the full setting reference, theme presets, color formats,
 key-binding syntax, and recipes are documented in
-[docs/customization.md](docs/customization.md). Invalid values and hand-edited
-files are validated and repaired at load time, and saves are atomic.
+[docs/customization.md](docs/customization.md). The web settings page and the
+portable profile are covered in
+[docs/web-customization.md](docs/web-customization.md). Invalid values and
+hand-edited files are validated and repaired at load time, and saves are atomic.
 
 Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
 
@@ -160,11 +181,12 @@ Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
 cargo test
 ```
 
-Web UI (in progress):
+Web UI:
 
 ```sh
 cd web
 npm.cmd install
+npm.cmd run build:wasm   # after a fresh clone or a WASM change
 npm.cmd run dev
 ```
 
