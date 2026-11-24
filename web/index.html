@@ -96,19 +96,50 @@
                 New messages
               </button>
             </div>
+            <div id="commandMenu" class="command-menu" hidden>
+              <div class="command-menu-head" aria-hidden="true">
+                <span class="command-menu-title">Commands</span>
+                <span id="commandCount" class="command-menu-count"></span>
+              </div>
+              <ul
+                id="commandList"
+                class="command-list"
+                role="listbox"
+                aria-label="Slash commands"
+              ></ul>
+              <p class="command-menu-foot" aria-hidden="true">
+                ↑↓ navigate · Tab complete · Enter run · Esc close
+              </p>
+            </div>
             <form id="sendForm" class="composer">
-              <span class="composer-prompt" aria-hidden="true">›</span>
+              <button
+                id="commandToggle"
+                class="composer-command"
+                type="button"
+                aria-label="Show commands"
+                aria-haspopup="listbox"
+                aria-controls="commandList"
+                aria-expanded="false"
+                title="Commands (type /)"
+              >
+                /
+              </button>
               <input
                 id="message"
                 type="text"
                 autocomplete="off"
-                placeholder="Type a message…"
+                placeholder="Type a message or / for commands…"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+                aria-controls="commandList"
                 disabled
               />
               <button id="send" type="submit" class="btn primary" disabled>Send</button>
             </form>
             <p id="composerHint" class="composer-hint">
-              Enter sends · messages stay end-to-end encrypted
+              Enter sends · type / for commands · messages stay end-to-end encrypted
             </p>
           </section>
         </main>

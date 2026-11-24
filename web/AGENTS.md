@@ -39,6 +39,7 @@ npm.cmd run dev          # dev server
   relay/decrypt, nickname and settings wiring. It mirrors the CLI's action loop.
 - `src/appearance.ts` — portable appearance types, localStorage, CSS mapping.
 - `src/settings-page.ts` — the `#/settings` page and its live preview.
+- `src/commands.ts` — slash-command metadata plus pure filter/parse helpers.
 - `scripts/build-wasm.mjs` — cross-platform `wasm-pack` wrapper.
 - `scripts/smoke-test.mjs` — Node test of the handshake/ratchet/store,
   appearance and nickname flows.
