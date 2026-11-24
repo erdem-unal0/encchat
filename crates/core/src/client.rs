@@ -186,7 +186,8 @@ impl ClientCore {
 
     /// True if the PSK has been verified against a device entry from the relay.
     pub fn verify_device(&self, entry: &crate::envelope::DeviceEntry) -> bool {
-        self.psk.verify_device_mac(&self.room, &entry.id, &entry.mac)
+        self.psk
+            .verify_device_mac(&self.room, &entry.id, &entry.mac)
     }
 
     pub fn has_session(&self, peer: DeviceId) -> bool {
@@ -225,24 +226,14 @@ impl ClientCore {
     pub fn handle_frame(&mut self, from: DeviceId, frame: PeerFrame) -> Result<Vec<Action>> {
         match frame {
             PeerFrame::Handshake { step, data } => self.handle_handshake(from, step, &data),
-            PeerFrame::Message {
-                msg_id: _,
-                ratchet,
-            } => self.handle_message(from, ratchet),
+            PeerFrame::Message { msg_id: _, ratchet } => self.handle_message(from, ratchet),
             PeerFrame::Typing => Ok(vec![]),
             PeerFrame::Ack { .. } => Ok(vec![]),
-            PeerFrame::Bye => Ok(vec![Action::Notice(format!(
-                "device {from:02x?} left"
-            ))]),
+            PeerFrame::Bye => Ok(vec![Action::Notice(format!("device {from:02x?} left"))]),
         }
     }
 
-    fn handle_handshake(
-        &mut self,
-        from: DeviceId,
-        step: u8,
-        data: &[u8],
-    ) -> Result<Vec<Action>> {
+    fn handle_handshake(&mut self, from: DeviceId, step: u8, data: &[u8]) -> Result<Vec<Action>> {
         match step {
             // msg1: peer started a handshake with us; we are the responder.
             0 => {
@@ -429,11 +420,7 @@ pub fn decode_state(bytes: &[u8]) -> Result<LocalState> {
 /// Returns `None` when nothing usable is left. A nickname is a cosmetic label,
 /// not an identity: two peers may even choose the same one.
 fn sanitize_nick(name: &str) -> Option<String> {
-    let cleaned: String = name
-        .chars()
-        .filter(|c| !c.is_control())
-        .take(32)
-        .collect();
+    let cleaned: String = name.chars().filter(|c| !c.is_control()).take(32).collect();
     let cleaned = cleaned.trim().to_string();
     if cleaned.is_empty() {
         None

@@ -55,7 +55,12 @@ impl Peer {
 
     /// Read one server frame, react to it, and send any resulting frames.
     async fn step(&mut self) {
-        let message = self.stream.next().await.expect("stream open").expect("frame");
+        let message = self
+            .stream
+            .next()
+            .await
+            .expect("stream open")
+            .expect("frame");
         let bytes = match message {
             Message::Binary(bytes) => bytes,
             other => panic!("unexpected frame: {other:?}"),

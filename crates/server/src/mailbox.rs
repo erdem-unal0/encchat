@@ -217,11 +217,7 @@ mod tests {
         mailbox.push([2; 16], vec![2], t0);
         mailbox.restore_front(vec![msg(1, 1, t0), msg(11, 11, t0)], t0);
 
-        let payloads: Vec<Vec<u8>> = mailbox
-            .drain(t0)
-            .into_iter()
-            .map(|m| m.payload)
-            .collect();
+        let payloads: Vec<Vec<u8>> = mailbox.drain(t0).into_iter().map(|m| m.payload).collect();
         assert_eq!(payloads, vec![vec![1], vec![11], vec![2]]);
     }
 }

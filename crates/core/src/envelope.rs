@@ -26,9 +26,14 @@ pub enum ClientFrame {
         mac: Mac,
     },
     /// Ask for the current device list of a room.
-    Devices { room: RoomId },
+    Devices {
+        room: RoomId,
+    },
     /// Send opaque bytes to another device in the same room.
-    Relay { to: DeviceId, payload: Vec<u8> },
+    Relay {
+        to: DeviceId,
+        payload: Vec<u8>,
+    },
     Ping,
 }
 
@@ -57,13 +62,18 @@ pub enum ServerFrame {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PeerFrame {
     /// One step of the Noise handshake (`step` is 0, 1 or 2).
-    Handshake { step: u8, data: Vec<u8> },
+    Handshake {
+        step: u8,
+        data: Vec<u8>,
+    },
     /// A Double Ratchet message.
     Message {
         msg_id: [u8; 16],
         ratchet: RatchetMessage,
     },
-    Ack { msg_id: [u8; 16] },
+    Ack {
+        msg_id: [u8; 16],
+    },
     Typing,
     Bye,
 }
