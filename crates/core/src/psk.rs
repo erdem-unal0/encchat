@@ -58,8 +58,8 @@ impl Psk {
     /// This is only an encoding of 256 bits of entropy; it is not used as a
     /// BIP39 wallet seed.
     pub fn to_mnemonic(&self) -> Result<String> {
-        let mnemonic = bip39::Mnemonic::from_entropy(&self.0)
-            .map_err(|e| Error::Mnemonic(e.to_string()))?;
+        let mnemonic =
+            bip39::Mnemonic::from_entropy(&self.0).map_err(|e| Error::Mnemonic(e.to_string()))?;
         Ok(mnemonic.to_string())
     }
 
@@ -84,9 +84,8 @@ impl Psk {
     /// MAC that binds a device ID to the shared key. Peers verify this so the
     /// relay cannot inject extra devices into a room.
     pub fn device_mac(&self, room: &RoomId, device: &DeviceId) -> Mac {
-        let mut mac =
-            <Hmac<Sha256> as HmacTrait>::new_from_slice(&self.0)
-                .expect("HMAC accepts any key length");
+        let mut mac = <Hmac<Sha256> as HmacTrait>::new_from_slice(&self.0)
+            .expect("HMAC accepts any key length");
         mac.update(b"encchat/device/v1");
         mac.update(room);
         mac.update(device);

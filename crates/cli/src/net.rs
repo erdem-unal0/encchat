@@ -5,7 +5,9 @@
 //! the protocol handling lives in exactly one place.
 
 use anyhow::{Context, Result};
-use encchat_core::{decode, encode, Action, ClientCore, ClientFrame, DeviceId, PeerFrame, ServerFrame};
+use encchat_core::{
+    decode, encode, Action, ClientCore, ClientFrame, DeviceId, PeerFrame, ServerFrame,
+};
 
 use crate::state::{hex, short};
 
@@ -83,8 +85,8 @@ pub fn handle_server_frame(
             }
         }
         ServerFrame::Deliver { from, payload } => {
-            let peer_frame: PeerFrame = decode(&payload)
-                .with_context(|| format!("bad peer frame from {}", hex(&from)))?;
+            let peer_frame: PeerFrame =
+                decode(&payload).with_context(|| format!("bad peer frame from {}", hex(&from)))?;
             let actions = core.handle_frame(from, peer_frame)?;
             for action in actions {
                 match action {

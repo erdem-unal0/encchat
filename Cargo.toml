@@ -1,7 +1,13 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/server", "crates/cli", "crates/wasm"]
-default-members = ["crates/core", "crates/server", "crates/cli"]
+members = [
+    "crates/core",
+    "crates/server",
+    "crates/cli",
+    "crates/wasm",
+    "crates/appearance",
+]
+default-members = ["crates/core", "crates/server", "crates/cli", "crates/appearance"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +17,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 encchat-core = { path = "crates/core" }
+encchat-appearance = { path = "crates/appearance" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"

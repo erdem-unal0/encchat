@@ -3,9 +3,17 @@
 //! This module knows nothing about ratatui or the network: it is the model the
 //! renderer reads and the event loop mutates, which makes it easy to unit test.
 
+use std::path::PathBuf;
+
+use chrono::{Local, Utc};
 use encchat_core::DeviceId;
 
-use crate::{commands, state};
+use crate::{
+    commands,
+    config::{Config, Theme},
+    settings::SettingsState,
+    state,
+};
 
 /// Whether a scrollback line is a chat message or a system/notice line.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,26 +31,26 @@ pub struct ChatLine {
     pub body: String,
     /// True for messages we sent, so the renderer can colour them differently.
     pub outgoing: bool,
+    /// Sender device, when known. Used for stable per-peer colors.
+    pub device: Option<DeviceId>,
 }
 
 impl ChatLine {
-    fn chat(time: String, nick: String, body: String, outgoing: bool) -> Self {
+    fn new(
+        time: String,
+        kind: LineKind,
+        nick: String,
+        body: String,
+        outgoing: bool,
+        device: Option<DeviceId>,
+    ) -> Self {
         Self {
             time,
-            kind: LineKind::Chat,
+            kind,
             nick,
             body,
             outgoing,
-        }
-    }
-
-    fn system(time: String, body: String) -> Self {
-        Self {
-            time,
-            kind: LineKind::System,
-            nick: String::new(),
-            body,
-            outgoing: false,
+            device,
         }
     }
 }
@@ -61,7 +69,12 @@ pub struct App {
     pub server: String,
     pub fingerprint: String,
     pub room_hex: String,
+    pub device_short: String,
+    pub config: Config,
+    pub config_path: PathBuf,
+    pub settings: Option<SettingsState>,
     pub connected: bool,
+    pub session_count: usize,
     pub nick: Option<String>,
     pub peers: Vec<PeerInfo>,
     pub lines: Vec<ChatLine>,
@@ -70,20 +83,35 @@ pub struct App {
     pub cursor: usize,
     pub history: Vec<String>,
     pub history_pos: Option<usize>,
-    /// Scrollback offset from the bottom, in lines.
+    /// Scrollback offset from the bottom, in logical lines.
     pub scroll: u16,
+    /// Messages that arrived while scrolled up.
+    pub unread: usize,
     pub should_quit: bool,
     /// Input saved while browsing history.
     draft: String,
 }
 
 impl App {
-    pub fn new(server: String, fingerprint: String, room_hex: String) -> Self {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        server: String,
+        fingerprint: String,
+        room_hex: String,
+        device_short: String,
+        config: Config,
+        config_path: PathBuf,
+    ) -> Self {
         Self {
             server,
             fingerprint,
             room_hex,
+            device_short,
+            config,
+            config_path,
+            settings: None,
             connected: false,
+            session_count: 0,
             nick: None,
             peers: Vec::new(),
             lines: Vec::new(),
@@ -92,6 +120,7 @@ impl App {
             history: Vec::new(),
             history_pos: None,
             scroll: 0,
+            unread: 0,
             should_quit: false,
             draft: String::new(),
         }
@@ -111,40 +140,106 @@ impl App {
 
     /// The input prompt, e.g. `alice ` or `me `.
     pub fn prompt(&self) -> String {
-        format!("{} ", self.nick.as_deref().unwrap_or("me"))
+        let nick = self
+            .nick
+            .as_deref()
+            .unwrap_or(&self.config.behavior.own_nick_fallback);
+        self.config
+            .prompt
+            .template
+            .replace("{nick}", nick)
+            .replace("{room}", &self.fingerprint)
+            .replace("{device}", &self.device_short)
     }
 
-    fn stamp() -> String {
-        chrono::Local::now().format("%H:%M:%S").to_string()
+    fn stamp(&self) -> String {
+        if !self.config.timestamps.enabled {
+            return String::new();
+        }
+        if self.config.timestamps.utc {
+            Utc::now()
+                .format(&self.config.timestamps.format)
+                .to_string()
+        } else {
+            Local::now()
+                .format(&self.config.timestamps.format)
+                .to_string()
+        }
+    }
+
+    fn trim_scrollback(&mut self) {
+        let max = self.config.layout.max_scrollback.max(1);
+        if self.lines.len() > max {
+            let excess = self.lines.len() - max;
+            self.lines.drain(..excess);
+        }
     }
 
     /// Append a chat line with an explicit display nickname.
+    #[cfg(test)]
     pub fn push_chat(&mut self, nick: &str, body: &str, outgoing: bool) {
-        self.lines.push(ChatLine::chat(
-            Self::stamp(),
+        self.lines.push(ChatLine::new(
+            self.stamp(),
+            LineKind::Chat,
             nick.to_string(),
             body.to_string(),
             outgoing,
+            None,
         ));
-        self.scroll = 0;
+        self.trim_scrollback();
     }
 
-    /// Append a system/notice line.
+    /// Append a system/notice line. Does not yank the viewport; commands that
+    /// produce immediate output call [`App::scroll_to_bottom`] themselves.
     pub fn push_system(&mut self, text: impl Into<String>) {
-        self.lines.push(ChatLine::system(Self::stamp(), text.into()));
-        self.scroll = 0;
+        self.lines.push(ChatLine::new(
+            self.stamp(),
+            LineKind::System,
+            String::new(),
+            text.into(),
+            false,
+            None,
+        ));
+        self.trim_scrollback();
     }
 
     /// Append an incoming message, resolving the sender's display name.
     pub fn push_incoming(&mut self, from: DeviceId, body: &str) {
         let nick = self.nick_for(&from);
-        self.push_chat(&nick, body, false);
+        self.lines.push(ChatLine::new(
+            self.stamp(),
+            LineKind::Chat,
+            nick,
+            body.to_string(),
+            false,
+            Some(from),
+        ));
+        self.trim_scrollback();
+        if self.scroll > 0 {
+            if self.config.behavior.auto_scroll {
+                self.scroll_to_bottom();
+            } else {
+                self.unread = self.unread.saturating_add(1);
+            }
+        }
     }
 
-    /// Append one of our own messages (nick if set, otherwise `me`).
+    /// Append one of our own messages (nick if set, otherwise the fallback).
     pub fn push_outgoing(&mut self, body: &str) {
-        let nick = self.nick.clone().unwrap_or_else(|| "me".to_string());
-        self.push_chat(&nick, body, true);
+        let nick = self
+            .nick
+            .clone()
+            .unwrap_or_else(|| self.config.behavior.own_nick_fallback.clone());
+        self.lines.push(ChatLine::new(
+            self.stamp(),
+            LineKind::Chat,
+            nick,
+            body.to_string(),
+            true,
+            None,
+        ));
+        self.trim_scrollback();
+        self.scroll_to_bottom();
     }
 
     /// Display name for a peer: its advertised nick, else the short device id.
@@ -159,6 +254,49 @@ impl App {
     pub fn clear(&mut self) {
         self.lines.clear();
         self.scroll = 0;
+        self.unread = 0;
+    }
+
+    // -- settings ---------------------------------------------------------
+
+    pub fn open_settings(&mut self) {
+        if self.settings.is_none() {
+            self.settings = Some(SettingsState::new(
+                self.config.clone(),
+                self.config_path.clone(),
+            ));
+        }
+    }
+
+    /// Open the editor focused on one setting, e.g. `/settings theme.preset`.
+    pub fn open_settings_at(&mut self, key: &str) -> bool {
+        self.open_settings();
+        self.settings
+            .as_mut()
+            .map(|settings| settings.select_key(key))
+            .unwrap_or(false)
+    }
+
+    /// Toggle timestamps for this session and return the new state.
+    pub fn toggle_timestamps(&mut self) -> bool {
+        self.config.timestamps.enabled = !self.config.timestamps.enabled;
+        self.config.timestamps.enabled
+    }
+
+    /// Switch to the next built-in theme for this session.
+    pub fn cycle_theme(&mut self) -> String {
+        let current = Theme::PRESETS
+            .iter()
+            .position(|name| *name == self.config.theme.name)
+            .unwrap_or(usize::MAX);
+        let next = if current == usize::MAX {
+            0
+        } else {
+            (current + 1) % Theme::PRESETS.len()
+        };
+        let name = Theme::PRESETS[next].to_string();
+        let _ = self.config.set("theme.preset", &name);
+        self.config.theme.name.clone()
     }
 
     // -- input editing ----------------------------------------------------
@@ -178,8 +316,9 @@ impl App {
     }
 
     pub fn insert_str(&mut self, text: &str) {
+        let text = text.replace("\r\n", " ").replace(['\r', '\n'], " ");
         let at = self.char_to_byte(self.cursor);
-        self.input.insert_str(at, text);
+        self.input.insert_str(at, &text);
         self.cursor += text.chars().count();
     }
 
@@ -200,6 +339,25 @@ impl App {
         let start = self.char_to_byte(self.cursor);
         let end = self.char_to_byte(self.cursor + 1);
         self.input.replace_range(start..end, "");
+    }
+
+    /// Delete from the cursor back to the start of the previous word.
+    pub fn delete_word(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut start = self.cursor;
+        while start > 0 && chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+        while start > 0 && !chars[start - 1].is_whitespace() {
+            start -= 1;
+        }
+        let start_byte = self.char_to_byte(start);
+        let end_byte = self.char_to_byte(self.cursor);
+        self.input.replace_range(start_byte..end_byte, "");
+        self.cursor = start;
     }
 
     pub fn move_left(&mut self) {
@@ -235,6 +393,11 @@ impl App {
         let trimmed = text.trim();
         if !trimmed.is_empty() && self.history.last().map(String::as_str) != Some(trimmed) {
             self.history.push(trimmed.to_string());
+        }
+        let max = self.config.behavior.input_history_size.max(1);
+        if self.history.len() > max {
+            let excess = self.history.len() - max;
+            self.history.drain(..excess);
         }
         trimmed.to_string()
     }
@@ -282,6 +445,14 @@ impl App {
 
     pub fn scroll_down(&mut self, lines: u16) {
         self.scroll = self.scroll.saturating_sub(lines);
+        if self.scroll == 0 {
+            self.unread = 0;
+        }
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll = 0;
+        self.unread = 0;
     }
 
     // -- tab completion ---------------------------------------------------
@@ -315,6 +486,9 @@ mod tests {
             "ws://127.0.0.1:8787".to_string(),
             "A1B2-C3D4".to_string(),
             "a1b2c3d4".to_string(),
+            "abababab".to_string(),
+            Config::default(),
+            PathBuf::from("config.json"),
         )
     }
 
@@ -333,7 +507,7 @@ mod tests {
     }
 
     #[test]
-    fn outgoing_uses_nick_then_me() {
+    fn outgoing_uses_nick_then_fallback() {
         let mut app = app();
         app.push_outgoing("hi");
         assert_eq!(app.lines[0].nick, "me");
@@ -341,6 +515,10 @@ mod tests {
         app.set_nick(Some("bob".to_string()));
         app.push_outgoing("again");
         assert_eq!(app.lines[1].nick, "bob");
+        app.config.behavior.own_nick_fallback = "anon".to_string();
+        app.set_nick(None);
+        app.push_outgoing("third");
+        assert_eq!(app.lines[2].nick, "anon");
     }
 
     #[test]
@@ -356,6 +534,16 @@ mod tests {
             established: true,
         }]);
         assert_eq!(app.nick_for(&device), "carol");
+    }
+
+    #[test]
+    fn prompt_uses_the_configured_template() {
+        let mut app = app();
+        app.set_nick(Some("alice".to_string()));
+        app.config.prompt.template = "{nick}@{room}> ".to_string();
+        assert_eq!(app.prompt(), "alice@A1B2-C3D4> ");
+        app.set_nick(None);
+        assert_eq!(app.prompt(), "me@A1B2-C3D4> ");
     }
 
     #[test]
@@ -384,6 +572,20 @@ mod tests {
     }
 
     #[test]
+    fn deletes_words_and_flattens_pasted_newlines() {
+        let mut app = app();
+        app.insert_str("hello big\r\nworld");
+        assert_eq!(app.input, "hello big world");
+        app.end();
+        app.delete_word();
+        assert_eq!(app.input, "hello big ");
+        app.delete_word();
+        assert_eq!(app.input, "hello ");
+        app.delete_word();
+        assert_eq!(app.input, "");
+    }
+
+    #[test]
     fn recalls_input_history() {
         let mut app = app();
         app.insert_str("first");
@@ -405,6 +607,18 @@ mod tests {
     }
 
     #[test]
+    fn history_is_bounded() {
+        let mut app = app();
+        app.config.behavior.input_history_size = 10;
+        for i in 0..20 {
+            app.insert_str(&format!("line {i}"));
+            app.take_input();
+        }
+        assert_eq!(app.history.len(), 10);
+        assert_eq!(app.history.first().unwrap(), "line 10");
+    }
+
+    #[test]
     fn completes_commands() {
         let mut app = app();
         app.insert_str("/ni");
@@ -420,5 +634,54 @@ mod tests {
         app.clear_input();
         app.insert_str("plain");
         assert!(!app.complete());
+    }
+
+    #[test]
+    fn scrolling_up_marks_incoming_as_unread() {
+        let mut app = app();
+        for i in 0..40 {
+            app.push_chat("alice", &format!("line {i}"), false);
+        }
+        app.scroll_up(5);
+        app.push_incoming([7; 16], "new message");
+        assert_eq!(app.scroll, 5);
+        assert_eq!(app.unread, 1);
+        app.scroll_down(5);
+        assert_eq!(app.scroll, 0);
+        assert_eq!(app.unread, 0);
+    }
+
+    #[test]
+    fn auto_scroll_jumps_to_the_newest_message() {
+        let mut app = app();
+        app.config.behavior.auto_scroll = true;
+        app.push_chat("alice", "old", false);
+        app.scroll_up(5);
+        app.push_incoming([7; 16], "new");
+        assert_eq!(app.scroll, 0);
+        assert_eq!(app.unread, 0);
+    }
+
+    #[test]
+    fn scrollback_is_bounded() {
+        let mut app = app();
+        app.config.layout.max_scrollback = 50;
+        for i in 0..60 {
+            app.push_chat("alice", &format!("line {i}"), false);
+        }
+        assert_eq!(app.lines.len(), 50);
+        assert_eq!(app.lines[0].body, "line 10");
+    }
+
+    #[test]
+    fn toggles_timestamps_and_cycles_themes() {
+        let mut app = app();
+        assert!(app.config.timestamps.enabled);
+        assert!(!app.toggle_timestamps());
+        assert!(app.toggle_timestamps());
+        assert_eq!(app.cycle_theme(), Theme::PRESETS[1]);
+        assert_eq!(app.cycle_theme(), Theme::PRESETS[2]);
+        app.config.theme.name = "custom".to_string();
+        assert_eq!(app.cycle_theme(), "default");
     }
 }

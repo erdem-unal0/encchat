@@ -117,8 +117,14 @@ fn two_clients_handshake_and_exchange_messages() {
 
     assert_eq!(alice.history().len(), 2);
     assert_eq!(bob.history().len(), 2);
-    assert!(alice.history().iter().any(|e| e.outgoing && e.body == "hello bob"));
-    assert!(bob.history().iter().any(|e| !e.outgoing && e.body == "hello bob"));
+    assert!(alice
+        .history()
+        .iter()
+        .any(|e| e.outgoing && e.body == "hello bob"));
+    assert!(bob
+        .history()
+        .iter()
+        .any(|e| !e.outgoing && e.body == "hello bob"));
 }
 
 #[test]

@@ -23,6 +23,9 @@ pub async fn run(session: Session) -> Result<()> {
         state_path,
         fingerprint,
         room_hex: _,
+        config: _,
+        config_path: _,
+        config_warnings: _,
     } = session;
 
     println!("Room fingerprint: {fingerprint}");

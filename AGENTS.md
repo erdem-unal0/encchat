@@ -55,6 +55,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 | `crates/server` | Blind WebSocket relay (axum) + in-memory TTL mailbox. |
 | `crates/cli` | Terminal client (`keygen`, `room`, `chat`). |
 | `crates/wasm` | `wasm-bindgen` surface over `core` for the browser. |
+| `crates/appearance` | Portable themes, layout, labels and timestamp settings for both frontends. |
 | `web/` | Vite + TypeScript client. `web/pkg/` is generated, never edited. |
 | `docs/` | Protocol spec, threat model, ADRs. |
 
@@ -72,6 +73,10 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
   versa. Prefer additive changes (a new enum variant at the end).
 - **Frontends never touch keys.** CLI and web both drive `ClientCore`; the web
   goes through `crates/wasm`.
+- **Appearance stays local.** `encchat-appearance` is UI preference, not
+  protocol: nothing in it is sent to the relay or a peer. Nicknames are the
+  exception and already travel as encrypted `PayloadKind::Nick`; local peer
+  aliases never leave the device.
 
 ## Gotchas
 
@@ -89,6 +94,7 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1
 
 - `README.md` — overview and quickstart.
 - `TODO.md` — planned work and known limitations.
+- `docs/web-customization.md` — web settings page, portable profiles, nicknames.
 - `docs/protocol.md` — full wire spec (~1,000 lines). **Only** needed when
   changing the protocol or frame types.
 - `docs/threat-model.md` — what is and is not protected. Read before any

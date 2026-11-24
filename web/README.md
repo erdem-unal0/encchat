@@ -54,6 +54,10 @@ If PowerShell blocks the `npm.ps1` shim with an execution-policy error, call
 4. **Connect**. The client joins the room, verifies each advertised device
    against the room key, excludes itself, and starts a Noise handshake with each
    peer device. Once a handshake completes you can send messages.
+5. **Settings** (gear in the header, or `#/settings`) opens the live-preview
+   customizer: themes and colors, typography, bubbles or IRC layout, density,
+   timestamps, nicknames and local aliases, and JSON import/export. It works
+   before connecting and does not disconnect an active session.
 
 The raw mnemonic is **never** written to `localStorage`. If you enable saved
 state, only the passphrase-encrypted blob and its salt are stored, and you must
@@ -63,8 +67,10 @@ re-enter the mnemonic and passphrase to restore the device.
 
 | Path | Purpose |
 | --- | --- |
-| `index.html` | Static markup: setup panel, chat panel, footer. |
-| `src/main.ts` | Transport, UI wiring, and the action loop. No crypto. |
+| `index.html` | Static markup: setup panel, chat panel, settings page, footer. |
+| `src/main.ts` | Transport, UI wiring, nicknames, and the action loop. No crypto. |
+| `src/appearance.ts` | Portable appearance types, storage, and CSS mapping. |
+| `src/settings-page.ts` | The `#/settings` page and live preview. |
 | `src/style.css` | Styles. |
 | `scripts/build-wasm.mjs` | Cross-platform `wasm-pack` wrapper. |
 | `scripts/smoke-test.mjs` | Runs a real handshake + message + state round-trip in Node. |
@@ -84,3 +90,5 @@ npm run test:wasm
 - No cross-device history: a device only sees messages it decrypted locally.
 - A newly added peer device will not receive messages sent before its handshake
   completed.
+- No custom CSS. Arbitrary CSS can exfiltrate with `url()` and spoof the UI, so
+  only the structured appearance profile is supported (see `TODO.md`).

@@ -70,7 +70,10 @@ impl Relay {
 
         let entries: Vec<DeviceEntry> = devices
             .iter()
-            .map(|(id, state)| DeviceEntry { id: *id, mac: state.mac })
+            .map(|(id, state)| DeviceEntry {
+                id: *id,
+                mac: state.mac,
+            })
             .collect();
 
         let mut to_self = vec![encode(&ServerFrame::Joined {
@@ -113,7 +116,10 @@ impl Relay {
             .map(|devices| {
                 devices
                     .iter()
-                    .map(|(id, state)| DeviceEntry { id: *id, mac: state.mac })
+                    .map(|(id, state)| DeviceEntry {
+                        id: *id,
+                        mac: state.mac,
+                    })
                     .collect()
             })
             .unwrap_or_default()
@@ -122,7 +128,13 @@ impl Relay {
     /// Deliver a payload to `to`, or queue it if that device is offline.
     ///
     /// Returns `true` if the payload was handed to a live connection.
-    pub fn deliver(&mut self, room: RoomId, from: DeviceId, to: DeviceId, payload: Vec<u8>) -> bool {
+    pub fn deliver(
+        &mut self,
+        room: RoomId,
+        from: DeviceId,
+        to: DeviceId,
+        payload: Vec<u8>,
+    ) -> bool {
         let now = Instant::now();
         let Some(devices) = self.rooms.get_mut(&room) else {
             return false;

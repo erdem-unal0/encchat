@@ -198,8 +198,8 @@ impl DoubleRatchet {
     }
 
     fn ratchet_recv(&mut self, remote_public: [u8; 32]) -> Result<()> {
-        let dh = StaticSecret::from(self.self_secret)
-            .diffie_hellman(&PublicKey::from(remote_public));
+        let dh =
+            StaticSecret::from(self.self_secret).diffie_hellman(&PublicKey::from(remote_public));
         let (root_key, chain) = kdf_rk(&self.root_key, dh.as_bytes())?;
         self.root_key = root_key;
         self.recv_chain = Some(chain);
@@ -210,8 +210,7 @@ impl DoubleRatchet {
 
     fn ratchet_send(&mut self) -> Result<()> {
         let (secret, public) = new_dh()?;
-        let dh =
-            StaticSecret::from(secret).diffie_hellman(&PublicKey::from(self.remote_public));
+        let dh = StaticSecret::from(secret).diffie_hellman(&PublicKey::from(self.remote_public));
         let (root_key, chain) = kdf_rk(&self.root_key, dh.as_bytes())?;
         self.root_key = root_key;
         self.self_secret = secret;

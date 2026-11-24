@@ -14,6 +14,22 @@ import init, {
   open_state,
   room_fingerprint,
 } from "../pkg/encchat_wasm.js";
+import {
+  DEFAULT_APPEARANCE,
+  DEFAULT_COLOR_FALLBACKS,
+  applyAppearance,
+  colorToCss,
+  formatTimestamp,
+  loadAliases,
+  loadAppearance,
+  loadOwnNick,
+  peerColor,
+  sanitizeLabel,
+  saveAliases,
+  saveOwnNick,
+  type Appearance,
+} from "./appearance.js";
+import { SettingsPage, type SettingsContext } from "./settings-page.js";
 import "./style.css";
 
 // --- Types mirroring the WASM views -----------------------------------------
@@ -34,17 +50,25 @@ type Action =
   | { kind: "send"; to: string; data: Uint8Array }
   | { kind: "received"; from: string; msgId: string; sentAt: number; body: string }
   | { kind: "handshake"; with: string }
-  | { kind: "notice"; message: string };
+  | { kind: "notice"; message: string }
+  | { kind: "nick"; from: string; nick: string };
 
 interface Outgoing {
   to: string;
   data: Uint8Array;
 }
 
+interface PeerNick {
+  device: string;
+  nick: string;
+}
+
 interface SavedState {
   salt: string;
   blob: string;
 }
+
+type ConnectionState = "idle" | "connecting" | "online" | "offline";
 
 // --- Element handles --------------------------------------------------------
 
@@ -68,6 +92,20 @@ const scrollbackEl = el<HTMLElement>("scrollback");
 const sendForm = el<HTMLFormElement>("sendForm");
 const messageInput = el<HTMLInputElement>("message");
 const sendButton = el<HTMLButtonElement>("send");
+const peopleList = el<HTMLElement>("peopleList");
+const jumpLatest = el<HTMLButtonElement>("jumpLatest");
+const composerHint = el<HTMLElement>("composerHint");
+const settingsButton = el<HTMLButtonElement>("settingsButton");
+const chatView = el<HTMLElement>("chatView");
+const settingsView = el<HTMLElement>("settingsView");
+const toasts = el<HTMLElement>("toasts");
+const statusBar = el<HTMLElement>("statusBar");
+const connDot = el<HTMLElement>("connDot");
+const statusText = el<HTMLElement>("statusText");
+const statusRoom = el<HTMLElement>("statusRoom");
+const statusPeers = el<HTMLElement>("statusPeers");
+const statusSessions = el<HTMLElement>("statusSessions");
+const statusClock = el<HTMLElement>("statusClock");
 
 // --- Client state -----------------------------------------------------------
 
@@ -79,6 +117,17 @@ let socket: WebSocket | null = null;
 let peers = new Map<string, DeviceView>();
 // Peers we have started a handshake with but do not yet have a session for.
 let handshaking = new Set<string>();
+let peerNicks = new Map<string, string>();
+let ownNick = loadOwnNick();
+let aliases = loadAliases();
+let appearance: Appearance = DEFAULT_APPEARANCE;
+let settingsPage: SettingsPage | null = null;
+let unread = 0;
+let clockTimer: number | null = null;
+
+// Paint the fallback look immediately; the saved appearance is applied after
+// the WASM module initializes (it needs `appearance_defaults`).
+applyAppearance(appearance);
 
 // --- Small helpers ----------------------------------------------------------
 
@@ -104,6 +153,10 @@ function shortId(hex: string): string {
   return hex.slice(0, 8);
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function setStatus(text: string, tone: "info" | "ok" | "warn" | "error" = "info"): void {
   statusEl.textContent = text;
   statusEl.dataset.tone = tone;
@@ -111,6 +164,54 @@ function setStatus(text: string, tone: "info" | "ok" | "warn" | "error" = "info"
 
 function setDeviceCount(count: number): void {
   deviceCountEl.textContent = String(count);
+}
+
+function setConnection(state: ConnectionState): void {
+  const labels: Record<ConnectionState, string> = {
+    idle: "Idle",
+    connecting: "Connecting…",
+    online: "Online",
+    offline: "Offline",
+  };
+  connDot.dataset.state = state;
+  statusText.textContent = labels[state];
+  updateStatusBar();
+}
+
+function toast(text: string): void {
+  const item = document.createElement("div");
+  item.className = "toast";
+  item.textContent = text;
+  toasts.append(item);
+  window.setTimeout(() => item.remove(), 3200);
+}
+
+function ownLabel(): string {
+  const nick = ownNick.trim();
+  if (nick) return nick;
+  const fallback = appearance.labels.own_fallback.trim();
+  return fallback || "me";
+}
+
+function peerLabel(device: string): string {
+  const alias = aliases[device]?.trim();
+  if (alias) return alias;
+  const nick = peerNicks.get(device);
+  if (nick && appearance.labels.show_peer_nicks) return nick;
+  if (appearance.labels.show_device_ids) return shortId(device);
+  return "peer";
+}
+
+/** Label for the People list, respecting the same nickname/device switches. */
+function peopleLabel(device: string): string {
+  return peerLabel(device);
+}
+
+function peerColorCss(device: string): string {
+  return colorToCss(
+    peerColor(appearance.theme.peer_palette, device),
+    DEFAULT_COLOR_FALLBACKS.incoming_nick,
+  );
 }
 
 // --- Scrollback -------------------------------------------------------------
@@ -128,12 +229,73 @@ function scrollToBottom(): void {
   scrollbackEl.scrollTop = scrollbackEl.scrollHeight;
 }
 
+function showUnread(): void {
+  if (!appearance.layout.show_unread) {
+    jumpLatest.hidden = true;
+    return;
+  }
+  jumpLatest.textContent =
+    unread === 1 ? "1 new message · jump to latest" : `${unread} new messages · jump to latest`;
+  jumpLatest.hidden = false;
+}
+
+function bumpUnread(): void {
+  if (!appearance.layout.show_unread) return;
+  unread += 1;
+  showUnread();
+}
+
+function refreshMessageMeta(wrap: HTMLElement): void {
+  const outgoing = wrap.classList.contains("outgoing");
+  const device = wrap.dataset.device ?? "";
+  const who = wrap.querySelector<HTMLElement>(".who");
+  const when = wrap.querySelector<HTMLElement>(".when");
+  const sentAt = Number(wrap.dataset.sentAt ?? Date.now());
+  const date = new Date(sentAt);
+
+  if (who) {
+    who.textContent = outgoing ? ownLabel() : peerLabel(device);
+    who.style.color = "";
+    if (!outgoing && appearance.layout.peer_colors) {
+      who.style.color = peerColorCss(device);
+    }
+  }
+  if (when) {
+    when.textContent = appearance.timestamps.enabled
+      ? formatTimestamp(appearance.timestamps.format, date)
+      : "";
+    when.title = date.toLocaleString();
+  }
+}
+
+function refreshSystemMeta(line: HTMLElement): void {
+  const when = line.querySelector<HTMLElement>(".when");
+  if (!when) return;
+  const sentAt = Number(line.dataset.sentAt ?? Date.now());
+  const date = new Date(sentAt);
+  const show = appearance.timestamps.enabled && appearance.timestamps.system;
+  when.textContent = show ? formatTimestamp(appearance.timestamps.format, date) : "";
+  when.title = date.toLocaleString();
+}
+
+function refreshMessageLabels(): void {
+  scrollbackEl.querySelectorAll<HTMLElement>(".msg").forEach(refreshMessageMeta);
+  scrollbackEl.querySelectorAll<HTMLElement>(".system").forEach(refreshSystemMeta);
+}
+
 function appendSystem(text: string): void {
   clearEmptyState();
-  const stick = atBottom();
+  const stick = appearance.layout.auto_scroll || atBottom();
   const line = document.createElement("p");
   line.className = "system";
-  line.textContent = text;
+  line.dataset.sentAt = String(Date.now());
+  const when = document.createElement("time");
+  when.className = "when";
+  const body = document.createElement("span");
+  body.className = "system-text";
+  body.textContent = text;
+  line.append(when, body);
+  refreshSystemMeta(line);
   scrollbackEl.append(line);
   if (stick) scrollToBottom();
 }
@@ -145,25 +307,116 @@ function appendMessage(options: {
   body: string;
 }): void {
   clearEmptyState();
-  const stick = atBottom();
+  const stick = appearance.layout.auto_scroll || atBottom();
 
   const wrap = document.createElement("div");
   wrap.className = options.outgoing ? "msg outgoing" : "msg incoming";
+  wrap.dataset.device = options.from;
+  wrap.dataset.sentAt = String(options.sentAt);
 
   const meta = document.createElement("div");
   meta.className = "meta";
-  const who = options.outgoing ? "you" : shortId(options.from);
-  const when = new Date(options.sentAt).toLocaleTimeString();
-  meta.textContent = `${who} · ${when}`;
+  const who = document.createElement("span");
+  who.className = "who";
+  const when = document.createElement("time");
+  when.className = "when";
+  meta.append(who, when);
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.textContent = options.body;
 
   wrap.append(meta, bubble);
+  refreshMessageMeta(wrap);
   scrollbackEl.append(wrap);
-  if (stick) scrollToBottom();
+
+  if (stick) {
+    scrollToBottom();
+  } else if (!options.outgoing) {
+    bumpUnread();
+  }
 }
+
+function updateClock(): void {
+  const now = new Date();
+  statusClock.textContent = `${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+}
+
+function updateStatusBar(): void {
+  statusBar.hidden = !appearance.layout.show_status_bar;
+  statusPeers.textContent = String(peers.size);
+  statusSessions.textContent = String(client ? client.session_count() : 0);
+  const room = fingerprintEl.textContent?.trim();
+  statusRoom.textContent = room && room !== "—" ? room : "—";
+  updateClock();
+}
+
+function renderPeople(): void {
+  peopleList.replaceChildren();
+  if (!client || peers.size === 0) {
+    const empty = document.createElement("li");
+    empty.className = "people-empty";
+    empty.textContent = "Connect to see peers.";
+    peopleList.append(empty);
+    return;
+  }
+
+  for (const id of [...peers.keys()].sort()) {
+    const item = document.createElement("li");
+    item.className = "person";
+
+    const dot = document.createElement("span");
+    dot.className = "person-dot";
+    dot.style.background = peerColorCss(id);
+
+    const copy = document.createElement("span");
+    copy.className = "person-copy";
+    const label = document.createElement("span");
+    label.className = "person-label";
+    label.textContent = peopleLabel(id);
+    const meta = document.createElement("span");
+    meta.className = "person-meta";
+    const hasSession = client.has_session(id);
+    meta.textContent = `${shortId(id)} · ${hasSession ? "session" : "awaiting session"}`;
+    copy.append(label, meta);
+
+    item.append(dot, copy);
+    peopleList.append(item);
+  }
+}
+
+/** Re-read appearance-dependent chrome without touching message history. */
+function syncChrome(): void {
+  statusBar.hidden = !appearance.layout.show_status_bar;
+  composerHint.hidden = !appearance.layout.show_hints;
+  if (!appearance.layout.show_unread) {
+    unread = 0;
+    jumpLatest.hidden = true;
+  } else if (unread > 0) {
+    showUnread();
+  }
+  refreshMessageLabels();
+  renderPeople();
+  updateStatusBar();
+}
+
+function setAppearance(next: Appearance): void {
+  appearance = next;
+  applyAppearance(appearance);
+  syncChrome();
+}
+
+scrollbackEl.addEventListener("scroll", () => {
+  if (!atBottom()) return;
+  unread = 0;
+  jumpLatest.hidden = true;
+});
+
+jumpLatest.addEventListener("click", () => {
+  unread = 0;
+  jumpLatest.hidden = true;
+  scrollToBottom();
+});
 
 // --- Encrypted local state --------------------------------------------------
 
@@ -202,6 +455,7 @@ function updateFingerprint(): void {
   const mnemonic = mnemonicInput.value.trim();
   if (!mnemonic) {
     fingerprintEl.textContent = "—";
+    updateStatusBar();
     return;
   }
   try {
@@ -209,6 +463,7 @@ function updateFingerprint(): void {
   } catch {
     fingerprintEl.textContent = "(invalid mnemonic)";
   }
+  updateStatusBar();
 }
 
 // --- Transport --------------------------------------------------------------
@@ -218,8 +473,48 @@ function sendRelay(to: string, payload: Uint8Array): void {
   socket.send(encode_relay(to, payload));
 }
 
+function loadPeerNicks(): void {
+  peerNicks = new Map();
+  if (!client) return;
+  try {
+    for (const entry of client.peer_nicks() as PeerNick[]) {
+      peerNicks.set(entry.device, entry.nick);
+    }
+  } catch {
+    // Older state without nicknames: start with an empty map.
+  }
+}
+
+function announceNicks(): void {
+  if (!client || peers.size === 0) return;
+  try {
+    const frames = client.announce_nick([...peers.keys()].join(",")) as Outgoing[];
+    for (const frame of frames) sendRelay(frame.to, frame.data);
+  } catch (error) {
+    appendSystem(`Could not announce your nickname: ${messageOf(error)}`);
+  }
+}
+
+function applySavedNick(nick: string): void {
+  ownNick = sanitizeLabel(nick);
+  saveOwnNick(ownNick);
+  if (client) {
+    try {
+      client.set_nick(ownNick);
+    } catch (error) {
+      appendSystem(`Could not set your nickname: ${messageOf(error)}`);
+    }
+    announceNicks();
+  }
+  refreshMessageLabels();
+  renderPeople();
+  settingsPage?.refresh();
+}
+
 function onJoined(devices: DeviceView[]): void {
   syncDevices(devices);
+  // Restored sessions may already be able to carry our nickname.
+  announceNicks();
 }
 
 function syncDevices(devices: DeviceView[]): void {
@@ -255,6 +550,10 @@ function syncDevices(devices: DeviceView[]): void {
       // A handshake with this peer is already in flight; ignore.
     }
   }
+
+  renderPeople();
+  updateStatusBar();
+  settingsPage?.refresh();
 }
 
 function handleAction(action: Action): void {
@@ -273,8 +572,18 @@ function handleAction(action: Action): void {
       break;
     case "handshake":
       handshaking.delete(action.with);
-      appendSystem(`Secure session established with ${shortId(action.with)}…`);
+      appendSystem(`Secure session established with ${peerLabel(action.with)}…`);
       persistState();
+      announceNicks();
+      renderPeople();
+      updateStatusBar();
+      settingsPage?.refresh();
+      break;
+    case "nick":
+      peerNicks.set(action.from, action.nick);
+      refreshMessageLabels();
+      renderPeople();
+      settingsPage?.refresh();
       break;
     case "notice":
       appendSystem(action.message);
@@ -299,6 +608,7 @@ function onServerFrame(frame: ServerFrame): void {
     case "joined":
       setStatus(`Joined room ${shortId(frame.room)}…`, "ok");
       onJoined(frame.devices);
+      setConnection("online");
       break;
     case "devices":
       syncDevices(frame.devices);
@@ -317,6 +627,7 @@ function onServerFrame(frame: ServerFrame): void {
 // --- Connect / disconnect ---------------------------------------------------
 
 function setConnected(connected: boolean): void {
+  document.body.dataset.connected = connected ? "true" : "false";
   connectButton.disabled = connected;
   disconnectButton.disabled = !connected;
   messageInput.disabled = !connected;
@@ -336,10 +647,17 @@ function disconnect(reason = "Disconnected."): void {
   socket = null;
   client = null;
   peers = new Map();
+  peerNicks = new Map();
   handshaking = new Set();
+  unread = 0;
+  jumpLatest.hidden = true;
   setDeviceCount(0);
   setConnected(false);
   setStatus(reason, "warn");
+  setConnection("offline");
+  renderPeople();
+  updateStatusBar();
+  settingsPage?.refresh();
 }
 
 function connect(): void {
@@ -376,14 +694,36 @@ function connect(): void {
     return;
   }
   client = created;
-
   peers = new Map();
+  peerNicks = new Map();
   handshaking = new Set();
+  unread = 0;
+  jumpLatest.hidden = true;
+
+  // Restore the advertised nickname: local preference wins, otherwise adopt
+  // whatever the encrypted state remembered.
+  loadPeerNicks();
+  if (ownNick) {
+    try {
+      created.set_nick(ownNick);
+    } catch {
+      // An invalid stored nick simply falls back to `labels.own_fallback`.
+    }
+  } else {
+    const restored = created.self_nick();
+    if (restored) {
+      ownNick = sanitizeLabel(restored);
+      saveOwnNick(ownNick);
+    }
+  }
+
   setDeviceCount(0);
+  renderPeople();
   localStorage.setItem(STORAGE_SERVER, serverUrl);
 
   appendSystem(`This device: ${created.device_id_hex()}`);
   setStatus(`Connecting to ${serverUrl}…`, "info");
+  setConnection("connecting");
 
   let ws: WebSocket;
   try {
@@ -391,6 +731,7 @@ function connect(): void {
   } catch (error) {
     setStatus(`Invalid relay URL: ${messageOf(error)}`, "error");
     client = null;
+    setConnection("offline");
     return;
   }
   ws.binaryType = "arraybuffer";
@@ -457,7 +798,56 @@ function sendMessage(): void {
   persistState();
 }
 
+// --- Routing ----------------------------------------------------------------
+
+function updateRoute(): void {
+  const showSettings = window.location.hash === "#/settings";
+  chatView.hidden = showSettings;
+  settingsView.hidden = !showSettings;
+  settingsButton.setAttribute("aria-pressed", String(showSettings));
+  settingsButton.setAttribute(
+    "aria-label",
+    showSettings ? "Close appearance settings" : "Appearance settings",
+  );
+  if (showSettings) settingsPage?.show();
+  else settingsPage?.hide();
+}
+
 // --- Bootstrap --------------------------------------------------------------
+
+function createSettingsPage(): void {
+  settingsPage = new SettingsPage(settingsView, {
+    context: (): SettingsContext => ({
+      connected: socket?.readyState === WebSocket.OPEN,
+      selfId: client ? client.device_id_hex() : null,
+      selfNick: ownNick,
+      peers: [...peers.keys()].map((id) => ({
+        id,
+        session: client ? client.has_session(id) : false,
+        nick: peerNicks.get(id) ?? "",
+      })),
+      aliases: { ...aliases },
+    }),
+    onDraft: (draft) => setAppearance(draft),
+    onSaved: (saved, nick) => {
+      setAppearance(saved);
+      applySavedNick(nick);
+    },
+    onAliasChange: (device, alias) => {
+      const clean = sanitizeLabel(alias);
+      if (clean) aliases[device] = clean;
+      else delete aliases[device];
+      saveAliases(aliases);
+      refreshMessageLabels();
+      renderPeople();
+    },
+    toast,
+    navigateChat: () => {
+      if (window.location.hash === "#/settings") window.location.hash = "#/";
+      else updateRoute();
+    },
+  });
+}
 
 async function bootstrap(): Promise<void> {
   try {
@@ -467,6 +857,13 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
+  const loaded = loadAppearance();
+  setAppearance(loaded.appearance);
+  if (loaded.notice) {
+    appendSystem(loaded.notice);
+    toast(loaded.notice);
+  }
+
   const savedServer = localStorage.getItem(STORAGE_SERVER);
   if (savedServer) serverUrlInput.value = savedServer;
   if (loadSavedState()) {
@@ -474,6 +871,9 @@ async function bootstrap(): Promise<void> {
   }
 
   updateFingerprint();
+  setConnection("idle");
+  renderPeople();
+  updateStatusBar();
 
   mnemonicInput.addEventListener("input", updateFingerprint);
 
@@ -494,7 +894,22 @@ async function bootstrap(): Promise<void> {
     sendMessage();
   });
 
-  window.addEventListener("beforeunload", persistState);
+  settingsButton.addEventListener("click", () => {
+    window.location.hash = window.location.hash === "#/settings" ? "#/" : "#/settings";
+  });
+
+  createSettingsPage();
+  window.addEventListener("hashchange", updateRoute);
+  updateRoute();
+
+  clockTimer = window.setInterval(() => {
+    if (!statusBar.hidden) updateClock();
+  }, 10_000);
+
+  window.addEventListener("beforeunload", () => {
+    persistState();
+    if (clockTimer !== null) window.clearInterval(clockTimer);
+  });
 }
 
 void bootstrap();

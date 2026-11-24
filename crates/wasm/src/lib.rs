@@ -6,11 +6,11 @@
 //! of this crate are (a) marshalling bytes/JS objects and (b) keeping the
 //! frontend free of protocol knowledge.
 
+use encchat_appearance::Appearance;
 use encchat_core::{
     decode,
     envelope::{ClientFrame, PeerFrame, ServerFrame},
-    store,
-    Action, ClientCore, DeviceEntry, Psk,
+    store, Action, ClientCore, DeviceEntry, DeviceId, Psk,
 };
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
@@ -101,6 +101,18 @@ fn parse_mnemonic(text: &str) -> Result<Psk, JsValue> {
     Psk::from_mnemonic(text).map_err(|e| err(e.to_string()))
 }
 
+/// Split a comma-separated device list (as the UI passes it) into ids.
+///
+/// Empty segments are ignored, so `""` parses to an empty list.
+fn parse_peer_list(peers_csv: &str) -> Result<Vec<DeviceId>, JsValue> {
+    peers_csv
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(parse_device_hex)
+        .collect()
+}
+
 // ---------------------------------------------------------------------------
 // JS-facing shapes
 // ---------------------------------------------------------------------------
@@ -124,13 +136,11 @@ enum JsAction {
         body: String,
     },
     /// A session with `with` is ready; messages can be sent.
-    Handshake {
-        with: String,
-    },
+    Handshake { with: String },
     /// Human-readable status for the UI.
-    Notice {
-        message: String,
-    },
+    Notice { message: String },
+    /// Device `from` is now advertising the nickname `nick`.
+    Nick { from: String, nick: String },
 }
 
 impl JsAction {
@@ -206,6 +216,12 @@ struct OutgoingView {
 }
 
 #[derive(Serialize)]
+struct PeerNickView {
+    device: String,
+    nick: String,
+}
+
+#[derive(Serialize)]
 struct HistoryView {
     #[serde(rename = "peerDevice")]
     peer_device: String,
@@ -221,12 +237,28 @@ fn to_js<T: Serialize>(value: &T) -> Result<JsValue, JsValue> {
     serde_wasm_bindgen::to_value(value).map_err(|e| err(e.to_string()))
 }
 
-fn actions_to_js(actions: Vec<Action>) -> Result<JsValue, JsValue> {
-    let converted = actions
+fn convert_actions(actions: Vec<Action>) -> Result<Vec<JsAction>, JsValue> {
+    actions
         .into_iter()
         .map(JsAction::from_action)
-        .collect::<Result<Vec<_>, _>>()?;
-    to_js(&converted)
+        .collect::<Result<Vec<_>, _>>()
+}
+
+/// Nicknames that appeared or changed between two `ClientCore::peer_nicks`
+/// snapshots. Both inputs are sorted by device id, so the output is too.
+fn changed_nicks(
+    before: &[(DeviceId, String)],
+    after: &[(DeviceId, String)],
+) -> Vec<(DeviceId, String)> {
+    after
+        .iter()
+        .filter(|(id, nick)| {
+            !before
+                .iter()
+                .any(|(old_id, old_nick)| old_id == id && old_nick == nick)
+        })
+        .map(|(id, nick)| (*id, nick.clone()))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +345,43 @@ pub fn open_state(
 #[wasm_bindgen]
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Appearance
+// ---------------------------------------------------------------------------
+
+/// Result of [`validate_appearance`]: the repaired document plus any warnings.
+#[derive(Serialize)]
+struct ValidatedAppearance {
+    appearance: Appearance,
+    warnings: Vec<String>,
+}
+
+/// All built-in themes, as an array of Theme objects.
+#[wasm_bindgen]
+pub fn appearance_presets() -> Result<JsValue, JsValue> {
+    to_js(&Appearance::presets())
+}
+
+/// The default portable appearance document.
+#[wasm_bindgen]
+pub fn appearance_defaults() -> Result<JsValue, JsValue> {
+    to_js(&Appearance::default())
+}
+
+/// Parse, sanitize and return `{ appearance: <object>, warnings: [<string>] }`.
+///
+/// Throws a JS `Error` for malformed JSON or the wrong JSON shape; repairable
+/// values (an invalid color, an out-of-range size, ...) are fixed and reported
+/// in `warnings` instead.
+#[wasm_bindgen]
+pub fn validate_appearance(text: &str) -> Result<JsValue, JsValue> {
+    let (appearance, warnings) = Appearance::from_json(text).map_err(err)?;
+    to_js(&ValidatedAppearance {
+        appearance,
+        warnings,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -409,14 +478,26 @@ impl WasmClient {
     }
 
     /// Feed an inbound `PeerFrame`; returns an array of action objects.
+    ///
+    /// Any nickname the frame updated is reported as a trailing `nick` action
+    /// (`{ kind: "nick", from, nick }`), since the core returns no `Action` for
+    /// it.
     pub fn handle_frame(&mut self, from_hex: &str, bytes: &[u8]) -> Result<JsValue, JsValue> {
         let from = parse_device_hex(from_hex)?;
         let frame: PeerFrame = decode(bytes).map_err(|e| err(e.to_string()))?;
+        let before = self.inner.peer_nicks();
         let actions = self
             .inner
             .handle_frame(from, frame)
             .map_err(|e| err(e.to_string()))?;
-        actions_to_js(actions)
+        let mut converted = convert_actions(actions)?;
+        for (device, nick) in changed_nicks(&before, &self.inner.peer_nicks()) {
+            converted.push(JsAction::Nick {
+                from: hex_encode(&device),
+                nick,
+            });
+        }
+        to_js(&converted)
     }
 
     /// Encrypt `body` for every peer in `peers_csv` that has a session.
@@ -429,14 +510,11 @@ impl WasmClient {
         sent_at_ms: f64,
     ) -> Result<JsValue, JsValue> {
         if !sent_at_ms.is_finite() || sent_at_ms < 0.0 {
-            return Err(err("sentAt must be a non-negative timestamp in milliseconds"));
+            return Err(err(
+                "sentAt must be a non-negative timestamp in milliseconds",
+            ));
         }
-        let peers = peers_csv
-            .split(',')
-            .map(str::trim)
-            .filter(|part| !part.is_empty())
-            .map(parse_device_hex)
-            .collect::<Result<Vec<_>, _>>()?;
+        let peers = parse_peer_list(peers_csv)?;
         if peers.is_empty() {
             return Err(err("no peer devices selected"));
         }
@@ -455,6 +533,56 @@ impl WasmClient {
             })
             .collect::<Result<Vec<_>, JsValue>>()?;
         to_js(&outgoing)
+    }
+
+    /// Set our advertised nickname.
+    ///
+    /// The core trims and sanitizes the label, so this returns `false` when
+    /// nothing usable is left (which also clears any previous nickname).
+    pub fn set_nick(&mut self, name: &str) -> bool {
+        self.inner.set_nick(name).is_some()
+    }
+
+    /// Our advertised nickname, or `undefined` if we have not set one.
+    pub fn self_nick(&self) -> Option<String> {
+        self.inner.self_nick().map(str::to_string)
+    }
+
+    /// Encrypt our nickname for every peer in `peers_csv` that has a session.
+    ///
+    /// Returns `[{ to, data }]` like [`Self::send_text`]. An empty array is
+    /// normal: either no peer has a session yet or we have no nickname.
+    pub fn announce_nick(&mut self, peers_csv: &str) -> Result<JsValue, JsValue> {
+        let mut peers = parse_peer_list(peers_csv)?;
+        peers.sort_unstable();
+        peers.dedup();
+        let frames = self.inner.announce_nick_to_all(&peers);
+        let outgoing = frames
+            .into_iter()
+            .map(|(peer, frame)| {
+                let data = encchat_core::encode(&frame).map_err(|e| err(e.to_string()))?;
+                Ok(OutgoingView {
+                    to: hex_encode(&peer),
+                    data: serde_bytes::ByteBuf::from(data),
+                })
+            })
+            .collect::<Result<Vec<_>, JsValue>>()?;
+        to_js(&outgoing)
+    }
+
+    /// Every peer nickname currently known, as `[{ device, nick }]` sorted by
+    /// device id.
+    pub fn peer_nicks(&self) -> Result<JsValue, JsValue> {
+        let nicks = self
+            .inner
+            .peer_nicks()
+            .into_iter()
+            .map(|(device, nick)| PeerNickView {
+                device: hex_encode(&device),
+                nick,
+            })
+            .collect::<Vec<_>>();
+        to_js(&nicks)
     }
 
     /// Encrypt the whole local state with `password` and `salt`.
@@ -493,5 +621,33 @@ mod tests {
         assert_eq!(text.len(), 512);
         assert_eq!(hex_decode(&text).unwrap(), bytes);
         assert_eq!(hex_decode(&format!("0x{text}")).unwrap(), bytes);
+    }
+
+    #[test]
+    fn parse_peer_list_skips_blanks() {
+        assert!(parse_peer_list("").unwrap().is_empty());
+        assert!(parse_peer_list(" , ,").unwrap().is_empty());
+        let hex = hex_encode(&[3u8; 16]);
+        let parsed = parse_peer_list(&format!(" {hex} ,{hex}")).unwrap();
+        assert_eq!(parsed, vec![[3u8; 16], [3u8; 16]]);
+    }
+
+    #[test]
+    fn changed_nicks_reports_new_and_updated_only() {
+        let alice = [7u8; 16];
+        let bob = [9u8; 16];
+        let before = [(alice, "alice".to_string())];
+        let after = [(bob, "bob".to_string()), (alice, "alice2".to_string())];
+
+        let changed = changed_nicks(&before, &after);
+        assert_eq!(
+            changed,
+            vec![(bob, "bob".to_string()), (alice, "alice2".to_string())]
+        );
+
+        assert!(changed_nicks(&after, &after).is_empty());
+        assert!(changed_nicks(&[], &[]).is_empty());
+        assert_eq!(changed_nicks(&after, &[]).len(), 0);
+        assert_eq!(changed_nicks(&[], &after).len(), 2);
     }
 }

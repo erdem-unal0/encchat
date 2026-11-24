@@ -13,6 +13,11 @@ through the WASM module built from `crates/wasm`, which wraps `crates/core`.
   the UI footer and README.
 - Do not persist the raw mnemonic; only the passphrase-encrypted blob + salt go
   to `localStorage`.
+- Appearance settings (`encchat.settings.v1`), local peer aliases
+  (`encchat.labels.v1`) and the display name (`encchat.nick.v1`) may live in
+  `localStorage`. Never put keys, the mnemonic or message plaintext there.
+- There is no custom CSS. Arbitrary CSS can exfiltrate with `url()` and spoof the
+  UI; if it is ever added, sanitize it and treat imports as untrusted.
 
 ## Build and test
 
@@ -31,6 +36,9 @@ npm.cmd run dev          # dev server
 ## Map
 
 - `src/main.ts` — transport (WebSocket) + UI only: join, verify MACs, handshake,
-  relay/decrypt. It mirrors the CLI's action loop.
+  relay/decrypt, nickname and settings wiring. It mirrors the CLI's action loop.
+- `src/appearance.ts` — portable appearance types, localStorage, CSS mapping.
+- `src/settings-page.ts` — the `#/settings` page and its live preview.
 - `scripts/build-wasm.mjs` — cross-platform `wasm-pack` wrapper.
-- `scripts/smoke-test.mjs` — Node test of the handshake/ratchet/store flow.
+- `scripts/smoke-test.mjs` — Node test of the handshake/ratchet/store,
+  appearance and nickname flows.

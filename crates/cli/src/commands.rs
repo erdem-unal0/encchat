@@ -17,6 +17,16 @@ pub enum Command {
     Status,
     Fingerprint,
     Me(String),
+    /// Open the interactive settings customizer, optionally on one setting.
+    Settings(String),
+    /// Switch theme; empty argument lists the presets.
+    Theme(String),
+    /// Toggle timestamps for this session.
+    Timestamps,
+    /// List the active key bindings.
+    Keys,
+    /// Show the config file path and current theme.
+    Config,
     /// An unrecognised `/command`.
     Unknown(String),
 }
@@ -32,6 +42,11 @@ pub const COMMANDS: &[&str] = &[
     "/status",
     "/fingerprint",
     "/me",
+    "/settings",
+    "/theme",
+    "/timestamps",
+    "/keys",
+    "/config",
 ];
 
 /// Parse one input line into a [`Command`].
@@ -55,6 +70,11 @@ pub fn parse(input: &str) -> Command {
         "status" => Command::Status,
         "fingerprint" => Command::Fingerprint,
         "me" => Command::Me(arg.to_string()),
+        "settings" | "customize" => Command::Settings(arg.to_string()),
+        "theme" => Command::Theme(arg.to_string()),
+        "timestamps" => Command::Timestamps,
+        "keys" => Command::Keys,
+        "config" => Command::Config,
         other => Command::Unknown(other.to_string()),
     }
 }
@@ -79,6 +99,11 @@ pub fn help_lines() -> Vec<String> {
         "/status        show connection and room details".to_string(),
         "/fingerprint   print the room fingerprint".to_string(),
         "/me <action>   send an emote".to_string(),
+        "/settings [k]  open the customizer, optionally on setting k (F2)".to_string(),
+        "/theme [name]  list or switch themes for this session (F4)".to_string(),
+        "/timestamps    toggle timestamps for this session (F3)".to_string(),
+        "/keys          list the active key bindings".to_string(),
+        "/config        show the config file path and theme".to_string(),
     ]
 }
 
@@ -127,6 +152,17 @@ mod tests {
         assert_eq!(parse("/who"), Command::Who);
         assert_eq!(parse("/status"), Command::Status);
         assert_eq!(parse("/fingerprint"), Command::Fingerprint);
+        assert_eq!(parse("/settings"), Command::Settings(String::new()));
+        assert_eq!(parse("/customize"), Command::Settings(String::new()));
+        assert_eq!(
+            parse("/settings theme.preset"),
+            Command::Settings("theme.preset".to_string())
+        );
+        assert_eq!(parse("/theme"), Command::Theme(String::new()));
+        assert_eq!(parse("/theme nord"), Command::Theme("nord".to_string()));
+        assert_eq!(parse("/timestamps"), Command::Timestamps);
+        assert_eq!(parse("/keys"), Command::Keys);
+        assert_eq!(parse("/config"), Command::Config);
     }
 
     #[test]
@@ -134,5 +170,17 @@ mod tests {
         assert_eq!(matching("/ni"), vec!["/nick"]);
         assert_eq!(matching("/"), COMMANDS.to_vec());
         assert!(matching("/zzz").is_empty());
+    }
+
+    #[test]
+    fn help_lists_every_command() {
+        let help = help_lines().join("\n");
+        for command in COMMANDS {
+            // `/exit` is an alias documented next to `/quit`.
+            if *command == "/exit" {
+                continue;
+            }
+            assert!(help.contains(command), "help is missing {command}");
+        }
     }
 }
