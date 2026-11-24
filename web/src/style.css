@@ -398,10 +398,10 @@ body[data-view="settings"] #app {
 }
 
 .statusbar-label {
-  font-size: 9.5px;
+  font-size: 10px;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  opacity: 0.72;
 }
 
 .statusbar code {
