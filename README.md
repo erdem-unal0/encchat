@@ -16,6 +16,17 @@ Both frontends share one appearance model and support themes, layout and
 nicknames. Nothing here is audited or production-ready, and the
 on-disk/on-wire formats are not frozen.
 
+## Screenshots
+
+The same room, the same conversation, from the browser and from the terminal:
+
+| Web client | CLI |
+| --- | --- |
+| [![encchat web client in the matrix theme](docs/screenshots/web.png)](docs/screenshots/web.png) | [![encchat CLI in the matrix theme](docs/screenshots/cli.png)](docs/screenshots/cli.png) |
+
+Both clients run the same `encchat-core` and read the same portable appearance
+profile; the Matrix preset shown here is one of ten built-in themes.
+
 ## Design at a glance
 
 - **One crypto implementation, two frontends.** The Rust core (`encchat-core`,
