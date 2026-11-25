@@ -1,4 +1,63 @@
+<div align="center">
+
+**English** · [Türkçe](README.tr.md)
+
 # encchat
+
+### Self-hosted, end-to-end encrypted 1:1 chat over a blind relay.
+
+**You share a key. The server never sees the conversation.**
+
+[![GitHub stars](https://img.shields.io/github/stars/erdem-unal0/encchat?style=flat-square&logo=github)](https://github.com/erdem-unal0/encchat/stargazers)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-4d9f8f?style=flat-square)](LICENSE-MIT)
+[![Rust](https://img.shields.io/badge/rust-1.75%2B-dea584?style=flat-square&logo=rust)](rust-toolchain.toml)
+[![Web: WASM](https://img.shields.io/badge/web-WASM-654ff0?style=flat-square&logo=webassembly)](crates/wasm)
+[![CLI: Linux | macOS | Windows](https://img.shields.io/badge/CLI-Linux%20%7C%20macOS%20%7C%20Windows-4493f8?style=flat-square)](#quickstart)
+[![Crypto: Noise + Double Ratchet](https://img.shields.io/badge/crypto-Noise%20%2B%20Double%20Ratchet-2ea44f?style=flat-square)](docs/protocol.md)
+
+**[Quickstart](#quickstart) · [Screenshots](#screenshots) · [How it works](#design-at-a-glance) · [Security](#security) · [Protocol](docs/protocol.md) · [Threat model](docs/threat-model.md)**
+
+<code>cargo run -p encchat-cli -- keygen</code>
+
+</div>
+
+> [!IMPORTANT]
+> The 24-word mnemonic **is** the key: anyone who has it can read the room.
+> Exchange it in person or over an existing end-to-end encrypted channel, never
+> over plaintext chat, SMS, or email.
+>
+> The web client is served by the same host that runs the relay. A malicious host
+> could serve modified JavaScript that captures the mnemonic or plaintext; use the
+> CLI when that matters. See [the threat model](docs/threat-model.md).
+
+<a id="screenshots"></a>
+
+<div align="center">
+
+<br />
+
+<table>
+<tr>
+<td align="center" width="50%">
+  <a href="docs/screenshots/web.png">
+    <img src="docs/screenshots/web.png" alt="encchat web client in the Matrix theme" />
+  </a><br />
+  <sub><strong>Web client</strong> · Matrix theme</sub>
+</td>
+<td align="center" width="50%">
+  <a href="docs/screenshots/cli.png">
+    <img src="docs/screenshots/cli.png" alt="encchat CLI in the Matrix theme" />
+  </a><br />
+  <sub><strong>CLI</strong> · Matrix theme</sub>
+</td>
+</tr>
+</table>
+
+<br />
+
+</div>
+
+---
 
 Self-hosted, end-to-end encrypted 1:1 chat with an IRC feel: you join a room with
 a key, talk, and leave. Nothing is stored by the server. Usable from a web app or
@@ -9,23 +68,14 @@ a 24-word BIP39 mnemonic so it can be read aloud. Everything else — room
 derivation, handshake, message encryption, multi-device registration — follows
 from that key.
 
+Both clients run the same `encchat-core` and read the same portable appearance
+profile; the Matrix preset in the screenshots is one of ten built-in themes.
+
 **Status: working core, CLI, relay and web client.** The Rust core, the CLI
 client, the relay server and the WASM-backed browser client build and pass their
 tests, including an end-to-end test that runs two clients through a real relay.
-Both frontends share one appearance model and support themes, layout and
-nicknames. Nothing here is audited or production-ready, and the
-on-disk/on-wire formats are not frozen.
-
-## Screenshots
-
-The same room, the same conversation, from the browser and from the terminal:
-
-| Web client | CLI |
-| --- | --- |
-| [![encchat web client in the matrix theme](docs/screenshots/web.png)](docs/screenshots/web.png) | [![encchat CLI in the matrix theme](docs/screenshots/cli.png)](docs/screenshots/cli.png) |
-
-Both clients run the same `encchat-core` and read the same portable appearance
-profile; the Matrix preset shown here is one of ten built-in themes.
+Nothing here is audited or production-ready, and the on-disk/on-wire formats are
+not frozen.
 
 ## Design at a glance
 
@@ -82,15 +132,15 @@ profile; the Matrix preset shown here is one of ten built-in themes.
 
 ## Repository layout
 
-| Path             | Contents                                                        |
-| ---------------- | --------------------------------------------------------------- |
-| `crates/core`    | `encchat-core` — crypto and protocol primitives, no I/O        |
-| `crates/server`  | `encchat-server` — blind WebSocket relay and TTL mailbox        |
-| `crates/cli`     | `encchat-cli` — terminal client (native core)                   |
-| `crates/wasm`    | `encchat-wasm` — wasm-bindgen wrapper around the core           |
-| `crates/appearance` | Portable themes, layout, labels and timestamp settings      |
-| `web/`           | TypeScript web UI                                               |
-| `docs/`          | Threat model, ADRs, protocol notes, customization guides        |
+| Path | Contents |
+| --- | --- |
+| `crates/core` | `encchat-core` — crypto and protocol primitives, no I/O |
+| `crates/server` | `encchat-server` — blind WebSocket relay and TTL mailbox |
+| `crates/cli` | `encchat-cli` — terminal client (native core) |
+| `crates/wasm` | `encchat-wasm` — `wasm-bindgen` wrapper around the core |
+| `crates/appearance` | Portable themes, layout, labels and timestamp settings |
+| `web/` | TypeScript web UI |
+| `docs/` | Threat model, ADRs, protocol notes, customization guides |
 
 ## Quickstart
 
@@ -137,6 +187,31 @@ and `/config`. `Up`/`Down` recall input history, `PageUp`/`PageDown` scroll,
 
 Use `--plain` (or run with stdout redirected) for the simple line-based mode,
 which is what the smoke test uses.
+
+### Web client
+
+```sh
+cd web
+npm.cmd install
+npm.cmd run build:wasm   # after a fresh clone or a WASM change
+npm.cmd run dev
+```
+
+The web client accepts either the 24-word mnemonic or the same 32 bytes written
+as 64 hex characters; pasting a hex key connects immediately. The room
+fingerprint stays masked (`8369-****`) until you hover or focus it, and clicking
+it copies the full value.
+
+> [!NOTE]
+> On Windows use `npm.cmd` rather than `npm`. PowerShell resolves `npm` to
+> `npm.ps1`, which is commonly blocked by the default execution policy
+> (`running scripts is disabled on this system`).
+
+Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
+
+```sh
+cargo test
+```
 
 ## Customization
 
@@ -186,25 +261,6 @@ portable profile are covered in
 [docs/web-customization.md](docs/web-customization.md). Invalid values and
 hand-edited files are validated and repaired at load time, and saves are atomic.
 
-Run the test suite (core, relay, CLI, plus the end-to-end WebSocket test):
-
-```sh
-cargo test
-```
-
-Web UI:
-
-```sh
-cd web
-npm.cmd install
-npm.cmd run build:wasm   # after a fresh clone or a WASM change
-npm.cmd run dev
-```
-
-> **Windows note:** use `npm.cmd` rather than `npm`. PowerShell resolves `npm` to
-> `npm.ps1`, which is commonly blocked by the default execution policy
-> (`running scripts is disabled on this system`).
-
 ## Security
 
 Read [docs/threat-model.md](docs/threat-model.md) before trusting this with
@@ -225,6 +281,70 @@ The server is assumed hostile. It sees room IDs, device IDs, message sizes, and
 timing; it cannot read message contents, forge a peer's identity, or complete a
 MITM handshake.
 
+## FAQ
+
+<details>
+<summary><strong>Do I need an account or a phone number?</strong></summary>
+
+No. Identity is a 32-byte pre-shared key that two people exchange out of band.
+There is no registration, no directory, and no server-side profile.
+
+</details>
+
+<details>
+<summary><strong>Does the relay store my messages?</strong></summary>
+
+Only as opaque ciphertext in an in-memory mailbox for devices that are briefly
+offline. It has no disk storage, no accounts, and no message logs, and it expires
+queued messages after a TTL. The relay cannot read any payload.
+
+</details>
+
+<details>
+<summary><strong>Can more than two people join a room?</strong></summary>
+
+No. v1 is strictly 1:1. One person may use several devices; each device gets its
+own ratchet session and sends fan out one ciphertext per recipient device.
+
+</details>
+
+<details>
+<summary><strong>What happens if I lose the 24 words?</strong></summary>
+
+The room is gone. There is no account recovery, no escrow, and no server-side
+backup. A leaked key cannot be revoked either: the only remedy is a new key and a
+new room.
+
+</details>
+
+<details>
+<summary><strong>Is this audited?</strong></summary>
+
+No. The core composes well-reviewed primitives (Noise, X25519, XChaCha20-
+Poly1305, Argon2id, BIP39) and has unit and end-to-end tests, but the composition
+and the on-disk/on-wire formats are not audited or frozen. Read the
+[threat model](docs/threat-model.md) first.
+
+</details>
+
+<details>
+<summary><strong>Can I self-host the relay?</strong></summary>
+
+Yes. `encchat-server` is a single small binary: a blind WebSocket relay with an
+in-memory TTL mailbox and no database. Pick a bind address and put it behind your
+own TLS terminator for `wss://`.
+
+</details>
+
+## Documentation
+
+- [Protocol specification](docs/protocol.md): frames, handshake, ratchet, storage.
+- [Threat model](docs/threat-model.md): what is protected, what leaks, residual risks.
+- [Architecture decision record](docs/adr/0001-architecture.md): why one Rust core serves both clients.
+- [CLI customization](docs/customization.md): settings, themes, key bindings, recipes.
+- [Web customization](docs/web-customization.md): the settings page and portable profiles.
+- [TODO](TODO.md): planned work and known limitations.
+
 ## What is deliberately not here yet
 
 - Hiding metadata from the server: room ID, device IDs, message sizes, and
@@ -240,6 +360,14 @@ MITM handshake.
 See [`TODO.md`](TODO.md) for the fuller, grouped list of planned work and known
 limitations.
 
+## Contributing
+
+Issues and pull requests are welcome. Before sending a change, run the one-shot
+check (`powershell -ExecutionPolicy Bypass -File scripts/check.ps1`, or the
+`cargo`/`npm` commands above) and read [AGENTS.md](AGENTS.md) for the invariants
+that must hold, especially that `encchat-core` stays free of I/O and that the
+relay never parses payloads.
+
 ## License
 
 Licensed under either of
@@ -252,8 +380,9 @@ intentionally submitted for inclusion in this project, as defined in the Apache
 2.0 license, shall be dual licensed as above, without any additional terms or
 conditions.
 
-> Note: this is a permissive license. Anyone may fork this project, modify the
-> web client, host it, and share nothing back. Given that the server serves the
+> [!NOTE]
+> This is a permissive license. Anyone may fork this project, modify the web
+> client, host it, and share nothing back. Given that the server serves the
 > JavaScript, that is a real limitation — see
 > [docs/threat-model.md](docs/threat-model.md). If you later want hosted
 > modifications to remain open, AGPL-3.0 is the license to consider.
