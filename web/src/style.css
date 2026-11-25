@@ -340,6 +340,7 @@ body[data-view="settings"] #app {
 }
 
 .fingerprint {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -347,23 +348,80 @@ body[data-view="settings"] #app {
   min-width: 0;
 }
 
-.fingerprint-label {
-  color: var(--enc-muted);
-  font-size: 9.5px;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-}
-
 .fingerprint code {
+  position: relative;
   max-width: 100%;
   font-family: var(--enc-font-mono);
   font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: var(--enc-status-accent);
   background: var(--enc-panel);
   border: 1px solid var(--enc-border-soft);
   border-radius: 7px;
   padding: 4px 8px;
   overflow-wrap: anywhere;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.fingerprint code[data-full] {
+  cursor: help;
+}
+
+.fingerprint code[data-full]:hover,
+.fingerprint code[data-full]:focus-visible {
+  border-color: color-mix(in srgb, var(--enc-status-accent) 55%, transparent 45%);
+  background: color-mix(in srgb, var(--enc-panel) 82%, var(--enc-status-accent) 18%);
+}
+
+.fingerprint code:focus-visible,
+.statusbar code[data-full]:focus-visible {
+  outline: 2px solid var(--enc-accent);
+  outline-offset: 2px;
+}
+
+/* Full value on hover/focus. Absolutely positioned so the masked chip keeps
+ * its width and nothing in the header or status bar shifts. */
+.fingerprint code[data-full]::after,
+.statusbar code[data-full]::after {
+  content: attr(data-full);
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 30;
+  padding: 5px 9px;
+  border: 1px solid var(--enc-border);
+  border-radius: 7px;
+  background: var(--enc-panel);
+  color: var(--enc-status-accent);
+  font-family: var(--enc-font-mono);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 10px 26px var(--enc-shadow);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-2px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+  pointer-events: none;
+}
+
+.fingerprint code[data-full]::after {
+  right: 0;
+}
+
+.statusbar code[data-full]::after {
+  left: 0;
+}
+
+.fingerprint code[data-full]:hover::after,
+.fingerprint code[data-full]:focus-visible::after,
+.statusbar code[data-full]:hover::after,
+.statusbar code[data-full]:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s;
 }
 
 .settings-button {
@@ -405,6 +463,7 @@ body[data-view="settings"] #app {
 }
 
 .statusbar code {
+  position: relative;
   font-family: var(--enc-font-mono);
   font-size: 0.72rem;
   overflow-wrap: anywhere;
@@ -629,8 +688,7 @@ main {
  * reading column, so wide screens do not stretch message lines forever. */
 .scrollback-wrap,
 .command-menu,
-.composer,
-.composer-hint {
+.composer {
   width: 100%;
   max-width: var(--enc-max-width);
   margin-inline: auto;
@@ -669,11 +727,39 @@ main {
 }
 
 .scrollback .empty {
-  color: var(--enc-muted);
-  font-style: italic;
   margin: auto;
+  padding: 18px 20px;
+  max-width: 42ch;
   text-align: center;
-  font-size: 0.88rem;
+}
+
+.scrollback .empty-title {
+  margin: 0;
+  color: var(--enc-text);
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.scrollback .empty-hint {
+  margin: 5px 0 0;
+  color: var(--enc-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.scrollback .empty-hint kbd {
+  display: inline-block;
+  min-width: 1.45em;
+  padding: 0 4px;
+  border: 1px solid var(--enc-border-soft);
+  border-bottom-color: var(--enc-border);
+  border-radius: 4px;
+  background: var(--enc-panel);
+  color: var(--enc-text);
+  font-family: var(--enc-font-mono);
+  font-size: 0.76rem;
+  line-height: 1.4;
 }
 
 .system {
@@ -684,6 +770,13 @@ main {
   font-size: var(--enc-system-size);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Tabular output such as /help or /status should not be centered: wrapped
+ * lines lose their alignment. Keep the block centered, align the text left. */
+.system.block {
+  max-width: min(78ch, 92%);
+  text-align: left;
 }
 
 .system .when {
@@ -698,6 +791,14 @@ main {
 
 .system .when:empty {
   display: none;
+}
+
+/* One-time security caveats: present, but not alarmist. */
+.system.note {
+  max-width: min(78ch, 92%);
+  color: color-mix(in srgb, var(--enc-text) 74%, var(--enc-bg) 26%);
+  font-size: calc(var(--enc-system-size) - 0.5px);
+  line-height: 1.5;
 }
 
 .msg {
@@ -953,33 +1054,6 @@ main {
   text-align: center;
 }
 
-.composer-command {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: 1px solid color-mix(in srgb, var(--enc-input-prompt) 32%, transparent 68%);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--enc-input-prompt) 12%, transparent 88%);
-  color: var(--enc-input-prompt);
-  font-family: var(--enc-font-mono);
-  font-size: 0.86rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.composer-command:hover,
-.composer-command:focus-visible {
-  background: color-mix(in srgb, var(--enc-input-prompt) 22%, transparent 78%);
-}
-
-.composer-command:focus-visible {
-  outline: 2px solid var(--enc-accent);
-  outline-offset: 1px;
-}
-
 @media (max-width: 640px) {
   .command-menu {
     max-height: 42vh;
@@ -1029,25 +1103,6 @@ main {
 [data-input-border="off"] .preview-composer {
   border-color: transparent;
   background: color-mix(in srgb, var(--enc-input-bg) 70%, transparent 30%);
-}
-
-.composer-hint {
-  margin: 0 auto;
-  color: var(--enc-muted);
-  font-size: 0.72rem;
-  text-align: center;
-}
-
-/* --- Footer --------------------------------------------------------------- */
-
-.footer {
-  flex: 0 0 auto;
-  padding: 6px clamp(12px, 2.2vw, 22px) 8px;
-  border-top: 1px solid var(--enc-border-soft);
-  color: var(--enc-muted);
-  font-size: 0.68rem;
-  line-height: 1.45;
-  text-align: center;
 }
 
 /* --- Connect drawer ------------------------------------------------------- */
@@ -1967,13 +2022,6 @@ main {
   font-weight: 600;
 }
 
-.preview-hint {
-  margin: 0 12px 12px;
-  color: var(--enc-muted);
-  font-size: 0.69rem;
-  text-align: center;
-}
-
 /* --- Toasts --------------------------------------------------------------- */
 
 .toasts {
@@ -2074,8 +2122,7 @@ main {
     gap: 6px;
   }
 
-  .preview-composer,
-  .preview-hint {
+  .preview-composer {
     display: none;
   }
 }
@@ -2129,10 +2176,6 @@ main {
     grid-column: 1 / -1;
     grid-row: 2;
     align-items: flex-start;
-  }
-
-  .fingerprint-label {
-    display: none;
   }
 
   .fingerprint code {
@@ -2198,9 +2241,6 @@ main {
     margin-left: 0;
   }
 
-  .footer {
-    padding: 5px 12px 6px;
-  }
 }
 
 @media (max-width: 400px) {

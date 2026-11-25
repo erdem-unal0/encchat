@@ -96,7 +96,6 @@ const DENSITY_OPTIONS: ReadonlyArray<{ value: Density; label: string }> = [
 
 type LayoutToggleKey =
   | "show_status_bar"
-  | "show_hints"
   | "input_border"
   | "auto_scroll"
   | "peer_colors"
@@ -104,7 +103,6 @@ type LayoutToggleKey =
 
 const LAYOUT_TOGGLES: ReadonlyArray<{ key: LayoutToggleKey; label: string; hint: string }> = [
   { key: "show_status_bar", label: "Status bar", hint: "Connection, room and peer counts." },
-  { key: "show_hints", label: "Composer hints", hint: "A quiet line under the input." },
   { key: "input_border", label: "Input border", hint: "Outline around the composer." },
   { key: "auto_scroll", label: "Auto-scroll", hint: "Follow new messages while reading back." },
   { key: "peer_colors", label: "Peer colors", hint: "Stable nickname colors per device." },
@@ -1211,11 +1209,6 @@ export class SettingsPage {
     composer.append(prompt, placeholder, send);
     frame.append(composer);
 
-    if (appearance.layout.show_hints) {
-      frame.append(
-        node("p", "preview-hint", "Enter sends · messages stay end-to-end encrypted"),
-      );
-    }
     this.previewHost.replaceChildren(frame);
   }
 

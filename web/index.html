@@ -31,9 +31,8 @@
             <span id="connectDot" class="conn-dot" data-state="idle" aria-hidden="true"></span>
             <span id="connectToggleLabel" class="connect-toggle-label">Connect</span>
           </button>
-          <div class="fingerprint">
-            <span class="fingerprint-label">Room fingerprint</span>
-            <code id="fingerprint">—</code>
+          <div class="fingerprint" aria-label="Room fingerprint">
+            <code id="fingerprint" tabindex="0">—</code>
           </div>
           <button
             id="settingsButton"
@@ -73,7 +72,7 @@
           </span>
           <span class="statusbar-item">
             <span class="statusbar-label">Room</span>
-            <code id="statusRoom">—</code>
+            <code id="statusRoom" tabindex="0">—</code>
           </span>
           <span class="statusbar-item">
             <span class="statusbar-label">Peers</span>
@@ -90,7 +89,10 @@
           <section class="chat" aria-label="Conversation">
             <div class="scrollback-wrap">
               <div id="scrollback" class="scrollback" role="log" aria-live="polite">
-                <p class="empty">No messages yet.</p>
+                <div class="empty">
+                  <p class="empty-title">No messages yet</p>
+                  <p class="empty-hint">Type a message below, or <kbd>/</kbd> for commands.</p>
+                </div>
               </div>
               <button id="jumpLatest" class="jump-latest" type="button" hidden>
                 New messages
@@ -112,18 +114,6 @@
               </p>
             </div>
             <form id="sendForm" class="composer">
-              <button
-                id="commandToggle"
-                class="composer-command"
-                type="button"
-                aria-label="Show commands"
-                aria-haspopup="listbox"
-                aria-controls="commandList"
-                aria-expanded="false"
-                title="Commands (type /)"
-              >
-                /
-              </button>
               <input
                 id="message"
                 type="text"
@@ -138,9 +128,6 @@
               />
               <button id="send" type="submit" class="btn primary" disabled>Send</button>
             </form>
-            <p id="composerHint" class="composer-hint">
-              Enter sends · type / for commands · messages stay end-to-end encrypted
-            </p>
           </section>
         </main>
       </div>
@@ -152,13 +139,6 @@
         aria-label="Appearance settings"
         hidden
       ></div>
-
-      <footer class="footer">
-        <span
-          >A malicious server could serve modified JavaScript. The WASM bundle is not
-          verified out of band; use the CLI when that matters.</span
-        >
-      </footer>
     </div>
 
     <div id="connectScrim" class="drawer-scrim" hidden></div>
@@ -192,13 +172,13 @@
         </label>
 
         <label class="field">
-          <span>Shared mnemonic (24 words)</span>
+          <span>Shared key (24 words or 64-character hex)</span>
           <textarea
             id="mnemonic"
             rows="3"
             spellcheck="false"
             autocomplete="off"
-            placeholder="abandon ability able about above absent ..."
+            placeholder="24 words, or a 64-character hex key — pasting hex connects automatically"
           ></textarea>
         </label>
 
@@ -229,7 +209,7 @@
         <dl class="stats">
           <div>
             <dt>Status</dt>
-            <dd id="status">Idle. Paste your mnemonic and connect.</dd>
+            <dd id="status">Idle. Paste your mnemonic or hex key and connect.</dd>
           </div>
           <div>
             <dt>Devices in room</dt>

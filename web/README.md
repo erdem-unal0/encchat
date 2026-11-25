@@ -49,10 +49,12 @@ the room is joined).
 
 1. **Relay URL** — the WebSocket endpoint of `encchat-server`
    (default `ws://127.0.0.1:8787`).
-2. **Shared mnemonic** — the 24-word phrase both people agreed on out of band.
-   Click **Generate mnemonic** to create a new room; share the words over a
-   channel you trust. The **room fingerprint** under the title is derived from
-   the same key and can be compared verbally.
+2. **Shared key** — either the 24-word phrase both people agreed on out of band,
+   or the same 32 bytes written as 64 hex characters. Click **Generate
+   mnemonic** to create a new room; share the words over a channel you trust.
+   Pasting a hex key connects immediately. The **room fingerprint** in the
+   header is derived from the same key: it stays masked (`8369-****`) until you
+   hover or focus it, and clicking it copies the full value.
 3. **Passphrase** (optional) — encrypts this device's session state locally.
    Tick **Save encrypted device state** to keep sessions across reloads.
 4. **Connect**. The client joins the room, verifies each advertised device
@@ -98,7 +100,7 @@ with the palette closed; unknown commands print a hint instead of sending.
 
 | Path | Purpose |
 | --- | --- |
-| `index.html` | Static markup: setup panel, chat panel, settings page, footer. |
+| `index.html` | Static markup: setup panel, chat panel, settings page. |
 | `src/main.ts` | Transport, UI wiring, nicknames, slash commands, and the action loop. No crypto. |
 | `src/commands.ts` | Slash-command metadata and the pure filter/parse helpers. |
 | `src/appearance.ts` | Portable appearance types, storage, and CSS mapping. |
@@ -118,7 +120,8 @@ npm run test:wasm
 
 - The relay is assumed hostile, but this web client is loaded from a server that
   could serve modified JavaScript. The WASM bundle is not verified out of band;
-  use the CLI when that matters (see the footer in the UI and threat-model R1).
+  use the CLI when that matters (the client repeats this caveat once when a room
+  starts; see threat-model R1).
 - No cross-device history: a device only sees messages it decrypted locally.
 - A newly added peer device will not receive messages sent before its handshake
   completed.
