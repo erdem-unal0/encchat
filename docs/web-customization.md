@@ -130,5 +130,5 @@ its salt are.
 - **No server sync.** Settings do not travel through the relay. Use
   export/import to move them.
 - **The host can still serve modified JavaScript.** Customization does not
-  change the caveat in the footer: a malicious host bypasses every client-side
-  control. Use the CLI when that matters.
+  change the caveat shown once when a room starts: a malicious host bypasses
+  every client-side control. Use the CLI when that matters.

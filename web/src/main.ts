@@ -10,9 +10,12 @@ import init, {
   decode_server_frame,
   encode_relay,
   generate_mnemonic,
+  new_client_from_hex_key,
   new_salt,
   open_state,
+  open_state_from_hex_key,
   room_fingerprint,
+  room_fingerprint_from_hex_key,
 } from "../pkg/encchat_wasm.js";
 import {
   DEFAULT_APPEARANCE,
@@ -104,7 +107,6 @@ const messageInput = el<HTMLInputElement>("message");
 const sendButton = el<HTMLButtonElement>("send");
 const peopleList = el<HTMLElement>("peopleList");
 const jumpLatest = el<HTMLButtonElement>("jumpLatest");
-const composerHint = el<HTMLElement>("composerHint");
 const settingsButton = el<HTMLButtonElement>("settingsButton");
 const chatView = el<HTMLElement>("chatView");
 const settingsView = el<HTMLElement>("settingsView");
@@ -126,12 +128,14 @@ const connectScrim = el<HTMLElement>("connectScrim");
 const commandMenu = el<HTMLElement>("commandMenu");
 const commandList = el<HTMLUListElement>("commandList");
 const commandCount = el<HTMLElement>("commandCount");
-const commandToggle = el<HTMLButtonElement>("commandToggle");
 
 // --- Client state -----------------------------------------------------------
 
 const STORAGE_STATE = "encchat.state.v1";
 const STORAGE_SERVER = "encchat.serverUrl";
+
+const SERVER_CAVEAT =
+  "A malicious server could serve modified JavaScript. The WASM bundle is not verified out of band; use the CLI when that matters.";
 
 let client: WasmClient | null = null;
 let socket: WebSocket | null = null;
@@ -151,6 +155,10 @@ let connectionState: ConnectionState = "idle";
 let commandMenuOpen = false;
 let commandMatches: CommandSpec[] = [];
 let commandIndex = 0;
+// Full room fingerprint; the UI only ever paints a masked form of it.
+let roomFingerprint = "";
+// The server-integrity caveat belongs to one room session, not every frame.
+let caveatShown = false;
 
 // Paint the fallback look immediately; the saved appearance is applied after
 // the WASM module initializes (it needs `appearance_defaults`).
@@ -246,6 +254,22 @@ function peerColorCss(device: string): string {
 
 // --- Scrollback -------------------------------------------------------------
 
+function emptyState(): HTMLElement {
+  const empty = document.createElement("div");
+  empty.className = "empty";
+  const title = document.createElement("p");
+  title.className = "empty-title";
+  title.textContent = "No messages yet";
+  const hint = document.createElement("p");
+  hint.className = "empty-hint";
+  hint.append("Type a message below, or ");
+  const key = document.createElement("kbd");
+  key.textContent = "/";
+  hint.append(key, " for commands.");
+  empty.append(title, hint);
+  return empty;
+}
+
 function clearEmptyState(): void {
   const empty = scrollbackEl.querySelector(".empty");
   if (empty) empty.remove();
@@ -313,11 +337,14 @@ function refreshMessageLabels(): void {
   scrollbackEl.querySelectorAll<HTMLElement>(".system").forEach(refreshSystemMeta);
 }
 
-function appendSystem(text: string): void {
+function appendSystem(text: string, tone: "system" | "note" = "system"): void {
   clearEmptyState();
   const stick = appearance.layout.auto_scroll || atBottom();
   const line = document.createElement("p");
-  line.className = "system";
+  line.className = tone === "note" ? "system note" : "system";
+  // Multi-line output (help, status, /who, key bindings) reads better flush
+  // left; a one-line notice stays centered like the rest of the notices.
+  if (text.includes("\n")) line.classList.add("block");
   line.dataset.sentAt = String(Date.now());
   const when = document.createElement("time");
   when.className = "when";
@@ -376,8 +403,7 @@ function updateStatusBar(): void {
   statusBar.hidden = !appearance.layout.show_status_bar;
   statusPeers.textContent = String(peers.size);
   statusSessions.textContent = String(client ? client.session_count() : 0);
-  const room = fingerprintEl.textContent?.trim();
-  statusRoom.textContent = room && room !== "—" ? room : "—";
+  renderFingerprint();
   updateClock();
 }
 
@@ -420,7 +446,6 @@ function renderPeople(): void {
 /** Re-read appearance-dependent chrome without touching message history. */
 function syncChrome(): void {
   statusBar.hidden = !appearance.layout.show_status_bar;
-  composerHint.hidden = !appearance.layout.show_hints;
   if (!appearance.layout.show_unread) {
     unread = 0;
     jumpLatest.hidden = true;
@@ -530,7 +555,6 @@ function renderCommandMenu(): void {
   commandMenu.hidden = false;
   commandMenuOpen = true;
   messageInput.setAttribute("aria-expanded", "true");
-  commandToggle.setAttribute("aria-expanded", "true");
   updateActiveDescendant();
 }
 
@@ -540,7 +564,6 @@ function closeCommandMenu(): void {
   commandIndex = 0;
   commandMenu.hidden = true;
   messageInput.setAttribute("aria-expanded", "false");
-  commandToggle.setAttribute("aria-expanded", "false");
   messageInput.removeAttribute("aria-activedescendant");
 }
 
@@ -585,11 +608,7 @@ function activateCommand(index: number): void {
 }
 
 function clearScrollback(): void {
-  scrollbackEl.replaceChildren();
-  const empty = document.createElement("p");
-  empty.className = "empty";
-  empty.textContent = "No messages yet.";
-  scrollbackEl.append(empty);
+  scrollbackEl.replaceChildren(emptyState());
   unread = 0;
   jumpLatest.hidden = true;
 }
@@ -666,12 +685,12 @@ function runCommand(name: string, args: string): void {
       break;
     }
     case "status": {
-      const room = fingerprintEl.textContent?.trim() ?? "";
+      const room = fullFingerprint();
       appendSystem(
         [
           `Connection: ${CONNECTION_LABELS[connectionState]}`,
           `Relay: ${serverUrlInput.value.trim() || "—"}`,
-          `Room fingerprint: ${room && room !== "—" ? room : "—"}`,
+          `Room fingerprint: ${room}`,
           `This device: ${client ? client.device_id_hex() : "— (not connected)"}`,
           `Peers: ${peers.size} · Sessions: ${client ? client.session_count() : 0}`,
         ].join("\n"),
@@ -679,9 +698,9 @@ function runCommand(name: string, args: string): void {
       break;
     }
     case "fingerprint": {
-      const room = fingerprintEl.textContent?.trim() ?? "";
+      const room = fullFingerprint();
       appendSystem(
-        room && room !== "—"
+        room !== "—"
           ? `Room fingerprint: ${room}`
           : "No room fingerprint yet — enter the shared mnemonic in the connection panel.",
       );
@@ -806,17 +825,100 @@ function persistState(): void {
 
 // --- Fingerprint ------------------------------------------------------------
 
-function updateFingerprint(): void {
-  const mnemonic = mnemonicInput.value.trim();
-  if (!mnemonic) {
-    fingerprintEl.textContent = "—";
-    updateStatusBar();
-    return;
+const FINGERPRINT_PATTERN = /^[0-9A-Fa-f]{4}(?:-[0-9A-Fa-f]{4}){7}$/;
+/** A 32-byte PSK written as 64 hex characters, with an optional `0x`. */
+const HEX_KEY_PATTERN = /^(?:0x)?[0-9a-f]{64}$/i;
+
+/** True when the input is a hex-encoded PSK rather than a 24-word mnemonic. */
+function isHexKey(text: string): boolean {
+  return HEX_KEY_PATTERN.test(text.trim());
+}
+
+/** Strip whitespace and an optional `0x` before handing the key to WASM. */
+function normalizeHexKey(text: string): string {
+  return text.trim().replace(/^0x/i, "").replace(/\s+/g, "");
+}
+
+/** The full fingerprint, or the placeholder state when there is no room yet. */
+function fullFingerprint(): string {
+  return roomFingerprint.trim() || "—";
+}
+
+/** First group plus one masked group; placeholders pass through unchanged. */
+function maskFingerprint(full: string): string {
+  const value = full.trim();
+  return FINGERPRINT_PATTERN.test(value) ? `${value.slice(0, 4)}-****` : value || "—";
+}
+
+/**
+ * Paint the masked value in both the header and the status bar. The full value
+ * stays in `roomFingerprint` (and in `data-full` for the hover/focus tooltip),
+ * never in the visible text.
+ */
+function renderFingerprint(): void {
+  const full = fullFingerprint();
+  const masked = maskFingerprint(full);
+  const revealable = FINGERPRINT_PATTERN.test(full);
+  for (const target of [fingerprintEl, statusRoom]) {
+    target.textContent = masked;
+    target.tabIndex = revealable ? 0 : -1;
+    if (revealable) {
+      target.dataset.full = full;
+      target.title = `Room fingerprint: ${full} · click to copy`;
+      target.setAttribute(
+        "aria-label",
+        `Room fingerprint: ${full}. Hover or focus to reveal; activate to copy.`,
+      );
+    } else {
+      delete target.dataset.full;
+      target.removeAttribute("title");
+      target.setAttribute(
+        "aria-label",
+        full === "—" ? "Room fingerprint not available yet" : `Room fingerprint: ${full}`,
+      );
+    }
   }
+}
+
+/** Copy the full fingerprint; the masked chip is the click target. */
+async function copyFingerprint(): Promise<void> {
+  const full = fullFingerprint();
+  if (!FINGERPRINT_PATTERN.test(full)) return;
   try {
-    fingerprintEl.textContent = room_fingerprint(mnemonic);
+    await navigator.clipboard.writeText(full);
+    toast("Room fingerprint copied.");
   } catch {
-    fingerprintEl.textContent = "(invalid mnemonic)";
+    // Non-secure contexts still get a copy via the legacy path.
+    const helper = document.createElement("textarea");
+    helper.value = full;
+    helper.setAttribute("readonly", "");
+    helper.style.position = "fixed";
+    helper.style.opacity = "0";
+    document.body.append(helper);
+    helper.select();
+    try {
+      document.execCommand("copy");
+      toast("Room fingerprint copied.");
+    } catch {
+      toast("Could not copy the fingerprint.");
+    } finally {
+      helper.remove();
+    }
+  }
+}
+
+function updateFingerprint(): void {
+  const keyText = mnemonicInput.value;
+  if (!keyText.trim()) {
+    roomFingerprint = "";
+  } else {
+    try {
+      roomFingerprint = isHexKey(keyText)
+        ? room_fingerprint_from_hex_key(normalizeHexKey(keyText))
+        : room_fingerprint(keyText);
+    } catch {
+      roomFingerprint = "(invalid key)";
+    }
   }
   updateStatusBar();
 }
@@ -962,6 +1064,10 @@ function onServerFrame(frame: ServerFrame): void {
   switch (frame.kind) {
     case "joined":
       setStatus(`Joined room ${shortId(frame.room)}…`, "ok");
+      if (!caveatShown) {
+        caveatShown = true;
+        appendSystem(SERVER_CAVEAT, "note");
+      }
       onJoined(frame.devices);
       setConnection("online");
       // Joining is the point where the conversation becomes the whole surface.
@@ -1109,6 +1215,7 @@ function disconnect(reason = "Disconnected."): void {
   peerNicks = new Map();
   handshaking = new Set();
   unread = 0;
+  caveatShown = false;
   closeCommandMenu();
   jumpLatest.hidden = true;
   setDeviceCount(0);
@@ -1122,11 +1229,12 @@ function disconnect(reason = "Disconnected."): void {
 
 function connect(): void {
   const serverUrl = serverUrlInput.value.trim();
-  const mnemonic = mnemonicInput.value.trim();
+  const keyInput = mnemonicInput.value.trim();
   const passphrase = passphraseInput.value;
+  const hexKey = isHexKey(keyInput) ? normalizeHexKey(keyInput) : null;
 
-  if (!mnemonic) {
-    setStatus("Enter the shared 24-word mnemonic first.", "error");
+  if (!keyInput) {
+    setStatus("Enter the shared mnemonic or hex key first.", "error");
     return;
   }
   if (!/^wss?:\/\//i.test(serverUrl)) {
@@ -1134,23 +1242,31 @@ function connect(): void {
     return;
   }
 
+  const createClient = (): WasmClient =>
+    hexKey ? new_client_from_hex_key(hexKey) : new WasmClient(keyInput);
+  const restoreClient = (password: string, salt: Uint8Array, blob: Uint8Array): WasmClient =>
+    hexKey
+      ? open_state_from_hex_key(hexKey, password, salt, blob)
+      : open_state(keyInput, password, salt, blob);
+
   let created: WasmClient;
   try {
     const saved = loadSavedState();
     if (saved && passphrase) {
       try {
-        created = open_state(mnemonic, passphrase, fromBase64(saved.salt), fromBase64(saved.blob));
+        created = restoreClient(passphrase, fromBase64(saved.salt), fromBase64(saved.blob));
         appendSystem("Restored saved encrypted device state.");
       } catch (error) {
         appendSystem(`Could not restore saved state (${messageOf(error)}); using a new device.`);
-        created = new WasmClient(mnemonic);
+        created = createClient();
       }
     } else {
-      created = new WasmClient(mnemonic);
+      created = createClient();
     }
   } catch (error) {
-    // A bad mnemonic (wrong word, wrong count, bad checksum) lands here.
-    setStatus(`Could not use that mnemonic: ${messageOf(error)}`, "error");
+    // A bad mnemonic (wrong word, wrong count, bad checksum) or malformed hex
+    // key lands here.
+    setStatus(`Could not use that key: ${messageOf(error)}`, "error");
     return;
   }
   client = created;
@@ -1340,6 +1456,28 @@ async function bootstrap(): Promise<void> {
 
   mnemonicInput.addEventListener("input", updateFingerprint);
 
+  // Pasting a 64-character hex PSK is a complete key: show the room and join
+  // without making the user find the button. A pasted mnemonic still needs an
+  // explicit Connect, so a stray paste never silently joins a room.
+  mnemonicInput.addEventListener("paste", () => {
+    window.setTimeout(() => {
+      if (!isHexKey(mnemonicInput.value)) return;
+      updateFingerprint();
+      if (socket) return;
+      closeDrawer({ restoreFocus: false });
+      connect();
+    }, 0);
+  });
+
+  for (const chip of [fingerprintEl, statusRoom]) {
+    chip.addEventListener("click", () => void copyFingerprint());
+    chip.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      void copyFingerprint();
+    });
+  }
+
   generateButton.addEventListener("click", () => {
     try {
       mnemonicInput.value = generate_mnemonic();
@@ -1394,23 +1532,6 @@ async function bootstrap(): Promise<void> {
       event.preventDefault();
       event.stopPropagation();
       closeCommandMenu();
-    }
-  });
-
-  commandToggle.addEventListener("click", () => {
-    if (messageInput.disabled) {
-      openDrawer();
-      return;
-    }
-    messageInput.focus({ preventScroll: true });
-    if (!messageInput.value.trim()) messageInput.value = "/";
-    if (isCommandFilter(messageInput.value)) {
-      const end = messageInput.value.length;
-      messageInput.setSelectionRange(end, end);
-      commandIndex = 0;
-      renderCommandMenu();
-    } else {
-      messageInput.select();
     }
   });
 

@@ -9,8 +9,8 @@ through the WASM module built from `crates/wasm`, which wraps `crates/core`.
   source of truth is `crates/wasm`.
 - **Never implement crypto in TypeScript.** Add a binding in `crates/wasm` and
   call it from `src/main.ts`.
-- Keep the "a malicious host could serve modified JavaScript" caveat visible in
-  the UI footer and README.
+- Keep the "a malicious host could serve modified JavaScript" caveat visible
+  once per room session in the conversation, and in the README.
 - Do not persist the raw mnemonic; only the passphrase-encrypted blob + salt go
   to `localStorage`.
 - Appearance settings (`encchat.settings.v1`), local peer aliases

@@ -101,6 +101,41 @@ fn parse_mnemonic(text: &str) -> Result<Psk, JsValue> {
     Psk::from_mnemonic(text).map_err(|e| err(e.to_string()))
 }
 
+/// Parse a 32-byte PSK written as 64 hex characters.
+///
+/// An optional `0x` prefix and surrounding whitespace are accepted, matching
+/// the way `ClientFrame::Join` prints keys. This is only an encoding of the
+/// same bytes a mnemonic carries, so the browser never handles key material
+/// itself.
+fn psk_from_hex(text: &str) -> std::result::Result<Psk, String> {
+    let trimmed = text.trim();
+    let digits = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    if digits.len() % 2 != 0 {
+        return Err("hex string must have an even number of digits".into());
+    }
+    let mut bytes = Vec::with_capacity(digits.len() / 2);
+    for pair in digits.as_bytes().chunks_exact(2) {
+        let hi = hex_value(pair[0]).ok_or_else(|| "invalid hex digit".to_string())?;
+        let lo = hex_value(pair[1]).ok_or_else(|| "invalid hex digit".to_string())?;
+        bytes.push((hi << 4) | lo);
+    }
+    if bytes.len() != encchat_core::PSK_LEN {
+        return Err(format!(
+            "key must be {} hex characters (got {})",
+            encchat_core::PSK_LEN * 2,
+            bytes.len() * 2
+        ));
+    }
+    Psk::from_slice(&bytes).map_err(|e| e.to_string())
+}
+
+fn parse_key_hex(text: &str) -> Result<Psk, JsValue> {
+    psk_from_hex(text).map_err(err)
+}
+
 /// Split a comma-separated device list (as the UI passes it) into ids.
 ///
 /// Empty segments are ignored, so `""` parses to an empty list.
@@ -324,6 +359,21 @@ pub fn encode_ping() -> Result<Vec<u8>, JsValue> {
     encchat_core::encode(&ClientFrame::Ping).map_err(|e| err(e.to_string()))
 }
 
+/// Open a persisted device with an already-parsed PSK.
+fn open_state_with_psk(
+    psk: Psk,
+    password: &str,
+    salt: &[u8],
+    blob: &[u8],
+) -> Result<WasmClient, JsValue> {
+    let salt = parse_salt(salt)?;
+    let key = store::derive_key(password, &salt).map_err(|e| err(e.to_string()))?;
+    let state = store::open_state(&key, blob).map_err(|e| err(e.to_string()))?;
+    Ok(WasmClient {
+        inner: ClientCore::from_state(psk, state),
+    })
+}
+
 /// Reopen a persisted device from its encrypted blob.
 #[wasm_bindgen]
 pub fn open_state(
@@ -332,13 +382,35 @@ pub fn open_state(
     salt: &[u8],
     blob: &[u8],
 ) -> Result<WasmClient, JsValue> {
-    let psk = parse_mnemonic(mnemonic)?;
-    let salt = parse_salt(salt)?;
-    let key = store::derive_key(password, &salt).map_err(|e| err(e.to_string()))?;
-    let state = store::open_state(&key, blob).map_err(|e| err(e.to_string()))?;
-    Ok(WasmClient {
-        inner: ClientCore::from_state(psk, state),
-    })
+    open_state_with_psk(parse_mnemonic(mnemonic)?, password, salt, blob)
+}
+
+/// Human-readable room fingerprint for a key written as 64 hex characters.
+#[wasm_bindgen]
+pub fn room_fingerprint_from_hex_key(hex_key: &str) -> Result<String, JsValue> {
+    Ok(parse_key_hex(hex_key)?.fingerprint())
+}
+
+/// Create a new device identity from a key written as 64 hex characters.
+///
+/// Equivalent to `new WasmClient(mnemonic)` for the same 32 bytes; the
+/// browser only ever passes the encoded form across the boundary.
+#[wasm_bindgen]
+pub fn new_client_from_hex_key(hex_key: &str) -> Result<WasmClient, JsValue> {
+    let psk = parse_key_hex(hex_key)?;
+    let inner = ClientCore::new(psk).map_err(|e| err(e.to_string()))?;
+    Ok(WasmClient { inner })
+}
+
+/// Reopen a persisted device from a 64-character hex key.
+#[wasm_bindgen]
+pub fn open_state_from_hex_key(
+    hex_key: &str,
+    password: &str,
+    salt: &[u8],
+    blob: &[u8],
+) -> Result<WasmClient, JsValue> {
+    open_state_with_psk(parse_key_hex(hex_key)?, password, salt, blob)
 }
 
 /// Version of the bindings crate, handy for a "build" footer.
@@ -621,6 +693,23 @@ mod tests {
         assert_eq!(text.len(), 512);
         assert_eq!(hex_decode(&text).unwrap(), bytes);
         assert_eq!(hex_decode(&format!("0x{text}")).unwrap(), bytes);
+    }
+
+    #[test]
+    fn psk_from_hex_accepts_64_hex_chars() {
+        let psk = Psk::from_bytes([7u8; 32]);
+        let encoded = hex_encode(psk.as_bytes());
+        for text in [
+            encoded.clone(),
+            format!("0x{encoded}"),
+            format!("  {encoded}\n"),
+        ] {
+            assert_eq!(psk_from_hex(&text).unwrap().as_bytes(), psk.as_bytes());
+        }
+        assert!(psk_from_hex("abcd").is_err());
+        assert!(psk_from_hex(&encoded[..62]).is_err());
+        assert!(psk_from_hex(&format!("{encoded}00")).is_err());
+        assert!(psk_from_hex(&format!("zz{}", &encoded[2..])).is_err());
     }
 
     #[test]
