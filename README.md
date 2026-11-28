@@ -8,7 +8,7 @@
 
 **You share a key. The server never sees the conversation.**
 
-[![GitHub stars](https://img.shields.io/github/stars/erdem-unal0/encchat?style=flat-square&logo=github)](https://github.com/erdem-unal0/encchat/stargazers)
+
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-4d9f8f?style=flat-square)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-1.75%2B-dea584?style=flat-square&logo=rust)](rust-toolchain.toml)
 [![Web: WASM](https://img.shields.io/badge/web-WASM-654ff0?style=flat-square&logo=webassembly)](crates/wasm)
